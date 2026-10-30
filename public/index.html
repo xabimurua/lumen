@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Lumen</title>
+<meta name="description" content="Convierte lo que aprendes en el trabajo y la vida diaria en evidencias para el reconocimiento de créditos universitarios.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='9' fill='%23f2b84b'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+
+<!-- Loading -->
+<div class="screen" id="sLoading"><div class="screen-card"><div class="logo"><i aria-hidden="true"></i>lumen</div><p id="loadingMsg">Cargando…</p></div></div>
+
+<!-- Login -->
+<div class="screen" id="sLogin" hidden>
+  <form class="screen-card" id="loginForm">
+    <div class="logo"><i aria-hidden="true"></i>lumen</div>
+    <h1>Lo que aprendes cada día cuenta.</h1>
+    <p>Entra con tu correo. Te enviaremos un enlace para acceder sin contraseña.</p>
+    <label class="field">Correo electrónico<input id="loginEmail" type="email" autocomplete="email" required placeholder="nombre@correo.es"></label>
+    <button class="btn primary" id="loginBtn" type="submit">Enviarme el enlace</button>
+    <p class="error" id="loginError" aria-live="polite"></p>
+    <p class="subtle"><a href="/privacidad.html" target="_blank" rel="noopener">Información sobre protección de datos</a></p>
+  </form>
+</div>
+
+<!-- Check email -->
+<div class="screen" id="sSent" hidden>
+  <div class="screen-card">
+    <div class="logo"><i aria-hidden="true"></i>lumen</div>
+    <h1>Revisa tu correo</h1>
+    <p>Hemos enviado un enlace de acceso a <b id="sentTo"></b>. Ábrelo en este mismo navegador. Si no lo ves en unos minutos, mira en la carpeta de correo no deseado.</p>
+    <button class="btn" id="sentBack" type="button">Usar otro correo</button>
+  </div>
+</div>
+
+<!-- Consent -->
+<div class="screen" id="sConsent" hidden>
+  <form class="screen-card wide" id="consentForm">
+    <div class="logo"><i aria-hidden="true"></i>lumen</div>
+    <h1>Antes de empezar</h1>
+    <p>Lumen es un piloto. Lee cómo tratamos tus datos y confirma que quieres participar.</p>
+    <div class="consent-text">
+      <b>Resumen</b>
+      <ul>
+        <li>Guardamos lo que registras (diario, entrevistas, archivos y objetivo) para construir tu expediente de evidencias.</li>
+        <li>Las preguntas y los análisis los genera Claude, un modelo de IA de Anthropic. Lo que escribes en una entrevista o en el diario se envía a Anthropic para generar la respuesta.</li>
+        <li>Las valoraciones de Lumen son orientativas. No conceden créditos ni sustituyen la evaluación de la universidad.</li>
+        <li>Solo la coordinación del piloto puede ver tus evidencias, y solo si tú lo autorizas abajo. Puedes cambiarlo cuando quieras.</li>
+        <li>Puedes descargar tus datos o eliminar tu cuenta y todo su contenido en cualquier momento desde «Mi cuenta».</li>
+      </ul>
+      <a href="/privacidad.html" target="_blank" rel="noopener">Leer la información completa sobre protección de datos</a>
+    </div>
+    <label class="field">Tu nombre (aparecerá en tu expediente)<input id="cName" required autocomplete="name"></label>
+    <label class="check"><input type="checkbox" id="cAccept" required> He leído la información sobre protección de datos y acepto participar en el piloto.</label>
+    <label class="check"><input type="checkbox" id="cShare"> Autorizo a la coordinación del piloto a ver mis evidencias y mi expediente (opcional).</label>
+    <button class="btn primary" type="submit">Empezar</button>
+    <p class="error" id="consentError" aria-live="polite"></p>
+  </form>
+</div>
+
+<!-- App -->
+<div class="app" id="sApp" hidden>
+  <aside class="side">
+    <div class="logo"><i aria-hidden="true"></i>lumen</div>
+    <div class="caption">Del día a día al crédito</div>
+    <nav class="nav">
+      <button class="on" data-view="agente"><span>✦</span>Hoy</button>
+      <button data-view="evidencias"><span>▤</span>Mis evidencias</button>
+      <button data-view="objetivo"><span>◎</span>Objetivo de acreditación</button>
+      <button data-view="expediente"><span>◈</span>Expediente</button>
+      <button data-view="coordinacion" id="navCoord" hidden><span>◇</span>Coordinación</button>
+      <button data-view="cuenta"><span>○</span>Mi cuenta</button>
+    </nav>
+    <div class="side-note"><strong>Lo que aprendes cuenta.</strong>En el trabajo, el voluntariado o la vida diaria. Lumen te ayuda a documentarlo para que una universidad pueda reconocerlo.</div>
+  </aside>
+
+  <main class="content">
+    <div class="top">
+      <div><small id="eyebrow">Plataforma de evidencias de aprendizaje</small><h1 id="pagetitle">¿Qué has aprendido hoy?</h1></div>
+      <div class="who"><span id="whoName"></span><div class="avatar" id="avatar">TÚ</div></div>
+    </div>
+
+    <!-- HOY -->
+    <section id="agente" class="view on">
+      <div class="workspace">
+        <div class="chat">
+          <div class="chat-head">
+            <div class="agent-icon" aria-hidden="true">✦</div>
+            <div><strong>Entrevista de evidencias</strong><small id="phase">Preparado para acompañarte</small></div>
+            <span class="status live" id="aiStatus">● IA conectada</span>
+          </div>
+          <div class="messages" id="messages" aria-live="polite"></div>
+          <div class="composer">
+            <div class="compose-line">
+              <textarea id="answer" rows="1" placeholder="Responde a Lumen…" aria-label="Tu respuesta"></textarea>
+              <button class="send" id="send">Enviar ↗</button>
+            </div>
+            <div class="help" id="helpLine">Enter para enviar · Mayús+Enter para nueva línea · Entrevista guiada por Claude</div>
+          </div>
+        </div>
+        <div class="aside-panels">
+          <div class="panel">
+            <h3>Hacia tu acreditación</h3>
+            <div class="subtle" id="targetLine"></div>
+            <div class="statrow">
+              <div class="stat"><strong id="kReady">0/0</strong><small>Resultados listos</small></div>
+              <div class="stat"><strong id="kHours">0</strong><small>Horas</small></div>
+              <div class="stat"><strong id="kEcts">0</strong><small>ECTS equiv.</small></div>
+            </div>
+            <div class="ra-mini" id="raMini"></div>
+            <button class="btn block" data-goto="expediente">Ver expediente →</button>
+          </div>
+          <div class="panel">
+            <h3>Diario rápido</h3>
+            <div class="subtle">Dos minutos al final del día. Lumen lo vincula a tus resultados de aprendizaje.</div>
+            <form class="form" id="diaryForm">
+              <label class="field">Qué hiciste o aprendiste
+                <textarea id="dText" required placeholder="Ej.: Preparé el informe trimestral de ventas y aprendí a hacer tablas dinámicas para comparar regiones."></textarea>
+              </label>
+              <div class="two">
+                <label class="field">Contexto
+                  <select id="dCtx"><option>Trabajo</option><option>Voluntariado</option><option>Formación no reglada</option><option>Vida diaria / autodidacta</option></select>
+                </label>
+                <label class="field">Horas
+                  <input id="dHours" type="number" min="0" max="200" step="0.5" value="1">
+                </label>
+              </div>
+              <label class="field">Fecha<input id="dDate" type="date"></label>
+              <label class="field">Producto o prueba (opcional, máx. 25 MB)<input id="dFile" type="file"></label>
+              <button class="btn primary" id="dSave" type="submit">Guardar en el diario</button>
+              <span class="toast" id="dToast" aria-live="polite"></span>
+            </form>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- EVIDENCIAS -->
+    <section id="evidencias" class="view">
+      <div class="full">
+        <h2>Mis evidencias</h2>
+        <p class="note">Cada evidencia se valora con cuatro criterios. <b>Validez</b> y <b>suficiencia</b> las estima Lumen a partir de lo que cuentas. <b>Autenticidad</b> sube cuando adjuntas un producto y cuando alguien confirma tu aprendizaje. <b>Vigencia</b> depende de cuándo ocurrió.</p>
+        <div id="evidenceList" class="items"></div>
+        <button class="btn primary" data-go-chat>＋ Nueva entrevista</button>
+      </div>
+    </section>
+
+    <!-- OBJETIVO -->
+    <section id="objetivo" class="view">
+      <div class="full">
+        <h2>Objetivo de acreditación</h2>
+        <p class="note">Indica la titulación y la asignatura en la que quieres pedir reconocimiento, y copia sus resultados de aprendizaje de la guía docente. Lumen orientará las entrevistas hacia ellos. Si aún no tienes un objetivo, puedes trabajar con las competencias transversales genéricas.</p>
+        <form class="form" id="profileForm" style="max-width:860px">
+          <div class="edit-grid">
+            <label class="field">Universidad<input id="pUni" placeholder="Ej.: Universidad del País Vasco"></label>
+            <label class="field">Titulación<input id="pTit" placeholder="Ej.: Grado en Administración y Dirección de Empresas"></label>
+            <label class="field">Asignatura o módulo<input id="pAsig" placeholder="Ej.: Análisis de datos para la gestión"></label>
+            <label class="field">Créditos ECTS de la asignatura<input id="pEcts" type="number" min="0" max="60" step="0.5" placeholder="6"></label>
+          </div>
+          <label class="field">Resultados de aprendizaje (uno por línea)
+            <textarea id="pRA" style="min-height:170px"></textarea>
+          </label>
+          <details class="more">
+            <summary>Pegar la guía docente y extraer los resultados con IA</summary>
+            <label class="field" style="margin-top:10px">Texto de la guía docente
+              <textarea id="pGuide" style="min-height:140px" placeholder="Pega aquí el apartado de competencias o resultados de aprendizaje de la guía docente."></textarea>
+            </label>
+            <div class="row-actions"><button class="btn small" type="button" id="pExtract">Extraer resultados</button><span class="toast" id="pExtractMsg"></span></div>
+          </details>
+          <div class="row-actions">
+            <button class="btn primary" type="submit">Guardar objetivo</button>
+            <button class="btn" type="button" id="pGeneric">Usar competencias genéricas</button>
+            <span class="toast" id="pToast" aria-live="polite"></span>
+          </div>
+        </form>
+      </div>
+      <div class="full">
+        <h2>Cómo valora Lumen tus evidencias</h2>
+        <p class="note">Son los criterios habituales en los procesos de reconocimiento de aprendizajes por experiencia. Cada universidad aplica su propio procedimiento.</p>
+        <div class="criteria">
+          <div><b>Validez</b>La evidencia se relaciona con un resultado de aprendizaje concreto de la asignatura.</div>
+          <div><b>Autenticidad</b>El aprendizaje es tuyo y se puede comprobar: un producto que hiciste y la confirmación de alguien que lo vio.</div>
+          <div><b>Suficiencia</b>Hay bastante profundidad y variedad: explicas, aplicas, das ejemplos y reconoces límites.</div>
+          <div><b>Vigencia</b>El aprendizaje es reciente. Lumen considera vigente lo ocurrido en los últimos cinco años.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- EXPEDIENTE -->
+    <section id="expediente" class="view">
+      <div class="full">
+        <h2 id="dossierTitle">Expediente de reconocimiento</h2>
+        <p class="note">Un resultado de aprendizaje queda listo para presentar cuando cumple las cinco comprobaciones: al menos dos evidencias, un producto adjunto, la confirmación de un tercero, profundidad suficiente y vigencia.</p>
+        <div class="kpis" id="dossierKpis"></div>
+        <div class="matrix" id="dossierMatrix"></div>
+        <div class="row-actions">
+          <button class="btn primary" id="exportHtml">↓ Descargar expediente (HTML)</button>
+        </div>
+        <p class="notice" style="margin-top:20px">Lumen no concede créditos. El reconocimiento lo resuelve la universidad según su normativa. En España, la experiencia laboral y profesional puede reconocerse hasta el 15&nbsp;% de los créditos de una titulación, siempre que esté relacionada con sus competencias. Consulta con la secretaría o la comisión de reconocimiento de tu centro antes de presentar el expediente.</p>
+      </div>
+    </section>
+
+    <!-- COORDINACIÓN -->
+    <section id="coordinacion" class="view">
+      <div class="full">
+        <h2>Participantes que comparten su expediente</h2>
+        <p class="note">Solo aparecen quienes han autorizado a la coordinación a ver sus evidencias. La vista es de solo lectura.</p>
+        <div class="people" id="people"></div>
+      </div>
+      <div class="full" id="coordDetail" hidden>
+        <h2 id="coordName"></h2>
+        <p class="note" id="coordTarget"></p>
+        <div class="kpis" id="coordKpis"></div>
+        <div class="matrix" id="coordMatrix"></div>
+        <div class="row-actions"><button class="btn primary" id="coordExport">↓ Descargar su expediente (HTML)</button></div>
+        <div class="items readonly" id="coordEvidences"></div>
+      </div>
+    </section>
+
+    <!-- CUENTA -->
+    <section id="cuenta" class="view">
+      <div class="full">
+        <h2>Mi cuenta</h2>
+        <form class="form" id="accountForm" style="max-width:560px">
+          <label class="field">Nombre<input id="aName" autocomplete="name"></label>
+          <label class="check"><input type="checkbox" id="aShare"> Autorizo a la coordinación del piloto a ver mis evidencias y mi expediente.</label>
+          <div class="row-actions"><button class="btn primary" type="submit">Guardar</button><span class="toast" id="aToast" aria-live="polite"></span></div>
+        </form>
+      </div>
+      <div class="full">
+        <h2>Tus datos</h2>
+        <p class="note">Puedes descargar todo lo que has registrado o eliminar tu cuenta. Al eliminarla se borran tus evidencias, tus archivos y tu acceso, y no se puede deshacer.</p>
+        <div class="row-actions">
+          <button class="btn" id="exportJson">↓ Descargar mis datos (JSON)</button>
+          <button class="btn" id="logout">Cerrar sesión</button>
+          <button class="btn danger" id="deleteAccount">Eliminar mi cuenta</button>
+          <span class="toast" id="accMsg" aria-live="polite"></span>
+        </div>
+        <p class="subtle" style="margin-top:14px"><a href="/privacidad.html" target="_blank" rel="noopener">Información sobre protección de datos</a></p>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script src="/vendor/supabase-2.117.3.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>
