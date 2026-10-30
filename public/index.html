@@ -69,7 +69,7 @@
     <nav class="nav">
       <button class="on" data-view="agente"><span>✦</span>Hoy</button>
       <button data-view="evidencias"><span>▤</span>Mis evidencias</button>
-      <button data-view="objetivo"><span>◎</span>Objetivo de acreditación</button>
+      <button data-view="objetivo"><span>◎</span>Acreditación <b class="badge" id="propBadge" hidden></b></button>
       <button data-view="expediente"><span>◈</span>Expediente</button>
       <button data-view="coordinacion" id="navCoord" hidden><span>◇</span>Coordinación</button>
       <button data-view="cuenta"><span>○</span>Mi cuenta</button>
@@ -151,7 +151,27 @@
     <!-- OBJETIVO -->
     <section id="objetivo" class="view">
       <div class="full">
-        <h2>Objetivo de acreditación</h2>
+        <h2>¿Qué quieres acreditar?</h2>
+        <p class="note">Dilo con tus palabras: una asignatura, una titulación o una competencia. Lumen te propondrá un objetivo con sus resultados de aprendizaje y te dirá cuánto cubren ya tus evidencias.</p>
+        <form class="form" id="intentForm" style="max-width:860px">
+          <label class="field">Lo que quiero acreditar
+            <textarea id="intentText" style="min-height:70px" placeholder="Ej.: Quiero que me reconozcan la asignatura de marketing digital del grado en ADE."></textarea>
+          </label>
+          <div class="row-actions">
+            <button class="btn primary" type="submit" id="intentBtn">Proponer objetivo</button>
+            <button class="btn" type="button" id="discoverBtn">Que Lumen proponga con mis evidencias</button>
+            <span class="toast" id="intentMsg" aria-live="polite"></span>
+          </div>
+        </form>
+      </div>
+      <div class="full" id="propSection">
+        <h2>Propuestas de acreditación</h2>
+        <p class="note">Lumen revisa tus evidencias cada vez que añades varias nuevas y te propone dónde podrían contar. Son orientativas: la titulación y la asignatura son habituales en universidades españolas, pero tendrás que comprobar la guía docente real del centro donde vayas a solicitarlo.</p>
+        <div class="items" id="propList"></div>
+      </div>
+      <div class="full">
+        <h2>Objetivo activo</h2>
+        <div id="objWarn"></div>
         <p class="note">Indica la titulación y la asignatura en la que quieres pedir reconocimiento, y copia sus resultados de aprendizaje de la guía docente. Lumen orientará las entrevistas hacia ellos. Si aún no tienes un objetivo, puedes trabajar con las competencias transversales genéricas.</p>
         <form class="form" id="profileForm" style="max-width:860px">
           <div class="edit-grid">

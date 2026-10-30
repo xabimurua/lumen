@@ -12,6 +12,8 @@ create table if not exists public.perfiles (
   consentimiento_version text,
   compartir_con_coordinacion boolean not null default false,
   objetivo jsonb not null default '{}'::jsonb,
+  propuestas jsonb not null default '[]'::jsonb,
+  propuestas_n_evidencias integer not null default 0,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -77,7 +79,7 @@ alter table public.uso_ia enable row level security;
 -- Nadie puede elegir su propio rol: se retiran los permisos sobre esa columna.
 revoke insert, update on public.perfiles from anon, authenticated;
 grant insert (user_id, nombre, consentimiento_at, consentimiento_version, compartir_con_coordinacion, objetivo) on public.perfiles to authenticated;
-grant update (nombre, consentimiento_at, consentimiento_version, compartir_con_coordinacion, objetivo) on public.perfiles to authenticated;
+grant update (nombre, consentimiento_at, consentimiento_version, compartir_con_coordinacion, objetivo, propuestas) on public.perfiles to authenticated;
 
 drop policy if exists "perfil propio: leer" on public.perfiles;
 create policy "perfil propio: leer" on public.perfiles for select to authenticated

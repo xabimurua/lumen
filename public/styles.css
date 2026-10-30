@@ -176,3 +176,15 @@ a{color:var(--accent)}
 .person{display:flex;justify-content:space-between;align-items:center;gap:10px;border:1px solid var(--line);border-radius:12px;padding:12px 14px;background:var(--paper);text-align:left;width:100%}
 .person:hover,.person.on{border-color:var(--lamp)}
 .readonly .row-actions,.readonly .edit-grid,.readonly .field{display:none}
+/* Accreditation proposals */
+.badge{display:inline-grid;place-items:center;min-width:18px;height:18px;padding:0 5px;margin-left:6px;border-radius:9px;background:var(--lamp);color:#152038;font-size:11px;font-weight:700}
+.prop{border:1px solid var(--line);border-radius:14px;padding:16px;display:grid;gap:10px;min-width:0}
+.prop.adoptada{border-color:var(--good)}
+.prop-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap}
+.prop-head b{display:block;font-size:16px;font-family:var(--font-display)}
+.fit{display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:center;font-size:12px;color:var(--muted)}
+.fit strong{font-family:var(--font-display);font-size:24px;color:var(--ink);font-variant-numeric:tabular-nums}
+.ra-cover{display:grid;gap:6px;font-size:13px}
+.ra-cover div{display:grid;grid-template-columns:22px 1fr;gap:6px}
+.prop ul{margin:0;padding-left:18px;font-size:13px}
+.prop p{margin:0}

@@ -1,6 +1,7 @@
 // POST /api/analyze — structured analyses: closing an interview, linking a diary entry, extracting outcomes.
-import { allowMethods, chargeAiCall, readJson, requireConsentedProfile, requireUser, sendError, HttpError } from "../lib/server.js";
-import { analyzeInterview, extractOutcomes, linkDiary, parseHistory, CONTEXTOS } from "../lib/claude.js";
+import { adminClient, allowMethods, chargeAiCall, readJson, requireConsentedProfile, requireUser, sendError, HttpError } from "../lib/server.js";
+import { analyzeInterview, extractOutcomes, linkDiary, parseHistory, proposeAccreditations, CONTEXTOS } from "../lib/claude.js";
+import { randomUUID } from "node:crypto";
 
 export default async function handler(req, res) {
   if (!allowMethods(req, res, ["POST"])) return;
@@ -29,6 +30,23 @@ export default async function handler(req, res) {
       if (!guia) throw new HttpError(400, "Pega primero el texto de la guía docente.");
       await chargeAiCall(user.id);
       return res.status(200).json({ resultados: await extractOutcomes(guia) });
+    }
+    if (body.kind === "propose") {
+      const intencion = String(body.intencion || "").trim().slice(0, 1000);
+      const admin = adminClient();
+      const { data: rows, error } = await admin.from("evidencias").select("data").eq("user_id", user.id).order("created_at");
+      if (error) throw new HttpError(500, "No se pudieron leer tus evidencias.");
+      const evidencias = rows.map((r) => r.data);
+      if (!intencion && evidencias.length < 2) throw new HttpError(400, "Documenta al menos dos aprendizajes para que Lumen pueda proponerte acreditaciones.");
+      await chargeAiCall(user.id);
+      const nuevas = (await proposeAccreditations({ intencion, objetivo: perfil.objetivo, evidencias })).map((p) => ({
+        ...p, id: randomUUID(), creada: new Date().toISOString(), origen: intencion ? "usuario" : "lumen", intencion, estado: "nueva",
+      }));
+      const anteriores = (perfil.propuestas || []).filter((p) => p.estado === "adoptada" || (p.estado === "nueva" && p.origen !== (intencion ? "usuario" : "lumen")));
+      const propuestas = [...nuevas, ...anteriores].slice(0, 8);
+      const { error: upErr } = await admin.from("perfiles").update({ propuestas, propuestas_n_evidencias: evidencias.length }).eq("user_id", user.id);
+      if (upErr) throw new HttpError(500, "No se pudieron guardar las propuestas.");
+      return res.status(200).json({ propuestas });
     }
     throw new HttpError(400, "Tipo de análisis desconocido.");
   } catch (err) {

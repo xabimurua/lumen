@@ -158,6 +158,36 @@ Entrada (${body.contexto}, ${body.horas} h): «${body.texto}»
 Responde con solo JSON: {"titulo":"máx. 8 palabras","resultados":["ID"],"validez":0,"suficiencia":0,"falta":"una frase"}`, { modelTier: "quick" });
         return json({ ...o, resultados: (o.resultados || []).filter((x) => ids.includes(x)).slice(0, 3) });
       }
+      if (body.kind === "propose") {
+        const me = db.perfiles.find((x) => x.user_id === db.session?.user?.id);
+        const evs = db.evidencias.filter((e) => e.user_id === me.user_id).map((e) => e.data);
+        const intencion = String(body.intencion || "").trim().slice(0, 1000);
+        if (!intencion && evs.length < 2) return fail(400, "Documenta al menos dos aprendizajes para que Lumen pueda proponerte acreditaciones.");
+        const evIds = evs.map((e) => e.id);
+        const resumen = evs.slice(-40).map((e) => `- id ${e.id} · «${e.titulo}» · ${e.contexto || "sin contexto"} · ${e.horas || 0} h · ${e.fecha}\n  ${Object.values(e.evidencias || {}).join(" ").slice(0, 600)}`).join("\n");
+        const o = await sample.json(`Eres el orientador de acreditación de Lumen. Propón objetivos de reconocimiento académico (sistema universitario español) que encajen con los aprendizajes documentados${intencion ? " y con lo que la persona quiere acreditar" : ""}.
+${intencion ? `Lo que quiere acreditar: «${intencion}»` : "No ha dicho qué quiere acreditar: propón tú las opciones con mejor encaje."}
+
+Evidencias:
+${resumen || "(todavía ninguna)"}
+
+Responde con solo un objeto JSON: {"propuestas":[{"titulo":"","tipo":"Asignatura de grado|Asignatura de máster|Microcredencial|Competencia transversal","titulacion":"","asignatura":"","ects":6,"resultados":[{"id":"RA1","texto":""}],"cobertura":[{"resultado_id":"RA1","evidencias":["id de evidencia"]}],"encaje":0,"motivo":"","siguientes_pasos":[""]}]}
+De 1 a 3 propuestas, de mayor a menor encaje.${intencion ? " La primera responde a lo que pide, aunque el encaje sea bajo." : ""} Titulación y asignatura plausibles y genéricas, sin afirmar que existan tal cual en una universidad concreta. De 4 a 6 resultados de aprendizaje como en una guía docente. cobertura: solo ids de la lista de evidencias que respalden de verdad cada resultado. encaje 0-100. motivo: dos frases citando evidencias por su título. siguientes_pasos: 2-4 acciones concretas.`);
+        const list = (Array.isArray(o?.propuestas) ? o.propuestas : []).slice(0, 3).map((p) => {
+          const ras = (p.resultados || []).slice(0, 8).map((r, i) => ({ id: "RA" + (i + 1), texto: String(r.texto || "").trim(), _o: r.id }));
+          const map = new Map(ras.map((r) => [r._o, r.id]));
+          return { titulo: p.titulo || "", tipo: p.tipo || "Asignatura de grado", titulacion: p.titulacion || "", asignatura: p.asignatura || p.titulo || "", ects: Number(p.ects) || 0,
+            resultados: ras.map(({ id, texto }) => ({ id, texto })),
+            cobertura: (p.cobertura || []).filter((c) => map.has(c.resultado_id)).map((c) => ({ resultado_id: map.get(c.resultado_id), evidencias: (c.evidencias || []).filter((id) => evIds.includes(id)) })),
+            encaje: Math.max(0, Math.min(100, Math.round(Number(p.encaje) || 0))), motivo: p.motivo || "", siguientes_pasos: (p.siguientes_pasos || []).slice(0, 4),
+            id: crypto.randomUUID ? crypto.randomUUID() : String(Math.random()), creada: new Date().toISOString(), origen: intencion ? "usuario" : "lumen", intencion, estado: "nueva" };
+        });
+        const origen = intencion ? "usuario" : "lumen";
+        me.propuestas = [...list, ...(me.propuestas || []).filter((p) => p.estado === "adoptada" || (p.estado === "nueva" && p.origen !== origen))].slice(0, 8);
+        me.propuestas_n_evidencias = evs.length;
+        persist();
+        return json({ propuestas: me.propuestas });
+      }
       if (body.kind === "extract") {
         const arr = await sample.json(`Extrae de esta guía docente los resultados de aprendizaje (o, si no hay, las competencias específicas) tal como están redactados, sin códigos. Máximo 12. Responde con solo un array JSON de strings.\n\n${String(body.guia).slice(0, 20000)}`);
         return json({ resultados: (Array.isArray(arr) ? arr : []).filter((s) => typeof s === "string" && s.trim()) });

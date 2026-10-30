@@ -5,6 +5,7 @@ Plataforma para convertir lo que una persona aprende en su día a día (trabajo,
 - **Diario rápido**: registros breves con contexto, horas, fecha y una prueba adjunta.
 - **Entrevista de evidencias**: Claude pregunta hasta reunir lo que pide un expediente y vincula cada evidencia con los resultados de aprendizaje de la asignatura.
 - **Criterios de valoración**: validez, autenticidad, suficiencia y vigencia, con cinco comprobaciones por resultado de aprendizaje.
+- **Propuestas de acreditación**: la persona dice qué quiere acreditar, o Lumen analiza sus evidencias cada pocas entradas y le propone dónde pueden contar, con el porcentaje cubierto y los siguientes pasos. Una propuesta se adopta como objetivo con un clic.
 - **Expediente** descargable para presentar a la universidad.
 - **Coordinación del piloto**: vista de solo lectura de los expedientes que cada participante decide compartir.
 - **Datos bajo control de cada participante**: consentimiento informado, descarga de datos y borrado de la cuenta.
