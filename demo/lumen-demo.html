@@ -1,0 +1,1283 @@
+<title>Lumen</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&display=swap">
+<style>
+
+/* Layout: lamp-lit night sidebar beside a cool paper workspace; chat as the hero, accreditation progress as a side rail. */
+:root{
+  --night:#152038;--night-2:#22304f;--night-line:#33446a;--night-text:#c4cde0;
+  --lamp:#f2b84b;--lamp-soft:#fbe7bd;
+  --bg:#f3f5f8;--paper:#ffffff;--ink:#1b2438;--muted:#66718a;--line:#dde3ec;
+  --tint:#eef2f8;--accent:#3557a8;--accent-ink:#ffffff;--user-bubble:#22325a;--user-ink:#ffffff;
+  --good:#2f7a52;--good-bg:#e5f3ea;--warn:#8a5a00;--warn-bg:#fbefd6;--bad:#a23b3b;
+  --font-display:"Bricolage Grotesque","Avenir Next",system-ui,sans-serif;
+  --font-body:"Atkinson Hyperlegible",system-ui,-apple-system,"Segoe UI",sans-serif;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --night:#0c1324;--night-2:#18233d;--night-line:#2a3a5c;--night-text:#aeb9d1;
+  --lamp:#f5c160;--lamp-soft:#3d3218;
+  --bg:#111829;--paper:#18213a;--ink:#e6eaf3;--muted:#98a3bb;--line:#2a3654;
+  --tint:#1f2a46;--accent:#8fb0ff;--accent-ink:#0e1528;--user-bubble:#33467a;--user-ink:#f2f5fb;
+  --good:#7fd1a0;--good-bg:#1c3a2b;--warn:#f5c160;--warn-bg:#3d3218;--bad:#f08f8f;color-scheme:dark}}
+:root[data-theme="dark"]{
+  --night:#0c1324;--night-2:#18233d;--night-line:#2a3a5c;--night-text:#aeb9d1;
+  --lamp:#f5c160;--lamp-soft:#3d3218;
+  --bg:#111829;--paper:#18213a;--ink:#e6eaf3;--muted:#98a3bb;--line:#2a3654;
+  --tint:#1f2a46;--accent:#8fb0ff;--accent-ink:#0e1528;--user-bubble:#33467a;--user-ink:#f2f5fb;
+  --good:#7fd1a0;--good-bg:#1c3a2b;--warn:#f5c160;--warn-bg:#3d3218;--bad:#f08f8f;color-scheme:dark}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;font:15px/1.55 var(--font-body);color:var(--ink);background:var(--bg)}
+button,input,textarea,select{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--lamp);outline-offset:2px}
+h1,h2,h3{font-family:var(--font-display);text-wrap:balance}
+.app{min-height:100vh;display:grid;grid-template-columns:250px minmax(0,1fr)}
+.side{background:var(--night);color:var(--night-text);padding:30px 18px;display:flex;flex-direction:column;gap:24px}
+.logo{font-family:var(--font-display);font-weight:800;font-size:32px;letter-spacing:-1.5px;color:#fff;padding:0 10px;display:flex;align-items:center;gap:10px}
+.logo i{width:14px;height:14px;border-radius:50%;background:var(--lamp);box-shadow:0 0 0 5px #f2b84b33,0 0 22px 6px #f2b84b66}
+.caption{font-size:10px;letter-spacing:2px;font-weight:700;color:var(--lamp);margin:0 10px;text-transform:uppercase}
+.nav{display:grid;gap:6px}
+.nav button{background:none;border:0;color:var(--night-text);border-radius:12px;padding:12px 14px;text-align:left}
+.nav button span{display:inline-block;width:22px;color:var(--lamp)}
+.nav button.on,.nav button:hover{background:var(--night-2);color:#fff}
+.side-note{margin-top:auto;border:1px solid var(--night-line);border-radius:14px;padding:16px;font-size:12px}
+.side-note strong{color:#fff;display:block;font-size:15px;margin-bottom:6px;font-family:var(--font-display)}
+.content{padding-block:26px 36px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));min-width:0;max-width:1520px;width:100%;margin:0 auto}
+@media(min-width:900px){.content{padding-left:clamp(20px,3vw,52px);padding-right:clamp(20px,3vw,52px)}}
+.top{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:22px}
+.top small{font-size:11px;letter-spacing:2px;font-weight:700;color:var(--muted);text-transform:uppercase}
+.top h1{margin:4px 0 0;font-size:clamp(23px,3vw,34px);letter-spacing:-.8px;font-weight:800}
+.who{display:flex;align-items:center;gap:10px;font-size:12px;color:var(--muted)}
+.avatar{background:var(--tint);width:42px;height:42px;border-radius:50%;display:grid;place-items:center;font-weight:700}
+.workspace{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:18px;align-items:start}
+.chat{background:var(--paper);border:1px solid var(--line);border-radius:20px;overflow:hidden;display:flex;flex-direction:column;height:min(78vh,820px);min-height:560px}
+.chat-head{padding:16px 20px;border-bottom:1px solid var(--line);display:flex;gap:12px;align-items:center}
+.agent-icon{height:40px;width:40px;border-radius:12px;background:var(--night);color:var(--lamp);display:grid;place-items:center;font-size:20px;flex:none}
+.chat-head strong{display:block;font-family:var(--font-display)}
+.chat-head small{color:var(--muted)}
+.status{margin-left:auto;font-size:11px;border-radius:20px;padding:5px 11px;white-space:nowrap;background:var(--tint);color:var(--muted)}
+.status.live{background:var(--good-bg);color:var(--good)}
+.messages{overflow:auto;flex:1;padding:22px;display:flex;flex-direction:column;gap:14px}
+.msg{max-width:86%;display:flex;align-items:flex-start;gap:10px}
+.msg.user{align-self:flex-end;flex-direction:row-reverse}
+.bubble{padding:12px 16px;border-radius:16px;background:var(--tint);white-space:pre-wrap;overflow-wrap:anywhere;min-width:0}
+.user .bubble{background:var(--user-bubble);color:var(--user-ink);border-bottom-right-radius:4px}
+.agent .bubble{border-bottom-left-radius:4px}
+.bubble.thinking{color:var(--muted);font-style:italic}
+.mini{border-radius:50%;background:var(--lamp-soft);font-size:11px;font-weight:700;min-width:30px;height:30px;display:grid;place-items:center}
+.choices{display:flex;flex-wrap:wrap;gap:8px;margin-left:40px}
+.choices button{border:1px solid var(--line);background:var(--paper);border-radius:20px;padding:8px 13px}
+.choices button:hover{border-color:var(--lamp);background:var(--lamp-soft)}
+.composer{padding:14px 18px 16px;border-top:1px solid var(--line)}
+.compose-line{display:flex;gap:9px;align-items:flex-end}
+.compose-line textarea{border:1px solid var(--line);background:var(--bg);border-radius:14px;padding:12px 14px;outline:none;resize:none;min-height:48px;max-height:120px;flex:1;min-width:0}
+.compose-line textarea:focus{border-color:var(--accent)}
+.send{background:var(--accent);color:var(--accent-ink);border:none;border-radius:13px;min-height:46px;padding:0 18px;font-weight:700}
+.send:disabled,.btn:disabled{opacity:.55;cursor:default}
+.help{font-size:11px;color:var(--muted);margin:7px 4px 0}
+.aside-panels{display:grid;gap:14px}
+.panel{background:var(--paper);border-radius:18px;border:1px solid var(--line);padding:20px;min-width:0}
+.panel h3{margin:0 0 6px;font-size:16px}
+.subtle{color:var(--muted);font-size:12px}
+.statrow{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:14px 0}
+.stat{background:var(--tint);padding:10px;border-radius:12px;min-width:0}
+.stat strong{display:block;font-size:22px;line-height:1.1;font-family:var(--font-display);font-variant-numeric:tabular-nums}
+.stat small{color:var(--muted);font-size:11px}
+.ra-mini{display:grid;gap:9px;margin-top:8px}
+.ra-mini div{display:grid;grid-template-columns:42px 1fr auto;gap:8px;align-items:center;font-size:12px}
+.ra-mini b{font-variant-numeric:tabular-nums}
+.track{height:6px;background:var(--tint);border-radius:10px;overflow:hidden}
+.fill{height:100%;background:var(--lamp);border-radius:10px;transition:width .4s}
+.fill.ok{background:var(--good)}
+.btn{border:1px solid var(--line);background:var(--paper);padding:10px 14px;border-radius:12px;font-weight:700}
+.btn:hover{background:var(--tint)}
+.btn.primary{background:var(--night);color:#fff;border-color:var(--night)}
+.btn.accent{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn.small{padding:7px 11px;font-size:13px}
+.btn.danger{color:var(--bad)}
+.btn.block{width:100%;margin-top:8px}
+.notice{border-radius:14px;background:var(--tint);padding:13px;font-size:12px;color:var(--muted)}
+.form{display:grid;gap:10px;margin-top:12px}
+.form .two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.field{display:grid;gap:4px;font-size:12px;color:var(--muted);min-width:0}
+.field input,.field select,.field textarea{border:1px solid var(--line);background:var(--bg);border-radius:10px;padding:9px 10px;font-size:14px;color:var(--ink);width:100%;min-width:0}
+.field textarea{resize:vertical;min-height:70px}
+.field input:focus,.field select:focus,.field textarea:focus{outline:none;border-color:var(--accent)}
+.view{display:none}.view.on{display:block}
+.full{background:var(--paper);border:1px solid var(--line);border-radius:20px;padding:clamp(18px,3vw,28px)}
+.full h2{margin:0 0 8px}
+.full + .full{margin-top:16px}
+.items{display:grid;gap:10px;margin:18px 0}
+.card{border:1px solid var(--line);border-radius:14px;padding:16px;min-width:0}
+.card-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap}
+.card-head b{display:block;font-size:16px}
+.card small{color:var(--muted)}
+.card p{margin:8px 0;overflow-wrap:anywhere}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.pill{font-size:11px;background:var(--tint);border-radius:20px;padding:4px 9px;display:inline-block;white-space:nowrap}
+.pill.ra{background:var(--lamp-soft)}
+.pill.ok{background:var(--good-bg);color:var(--good)}
+.pill.warn{background:var(--warn-bg);color:var(--warn)}
+.vasc{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:12px 0 4px}
+.vasc div{font-size:11px;color:var(--muted)}
+.vasc .dots{display:flex;gap:3px;margin-top:4px}
+.vasc .dots i{height:6px;flex:1;border-radius:3px;background:var(--tint)}
+.vasc .dots i.on{background:var(--lamp)}
+.vasc .dots.full i.on{background:var(--good)}
+details.more{margin-top:10px;border-top:1px solid var(--line);padding-top:10px}
+details.more summary{cursor:pointer;font-weight:700;font-size:13px;color:var(--accent)}
+.edit-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-top:12px}
+.row-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;align-items:center}
+.falta{background:var(--warn-bg);color:var(--warn);border-radius:10px;padding:9px 12px;font-size:13px;margin-top:10px}
+.note{font-size:13px;color:var(--muted);max-width:72ch}
+.empty{background:var(--tint);color:var(--muted);padding:22px;border-radius:12px}
+.matrix{overflow-x:auto;margin-top:16px}
+.matrix table{width:100%;border-collapse:collapse;min-width:720px;font-size:13px}
+.matrix th,.matrix td{text-align:left;padding:10px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+.matrix th{font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);font-weight:700}
+.matrix td.c{text-align:center;font-variant-numeric:tabular-nums}
+.yes{color:var(--good);font-weight:700}.no{color:var(--muted)}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:16px}
+.kpis .stat strong{font-size:26px}
+.criteria{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-top:14px}
+.criteria div{background:var(--tint);border-radius:12px;padding:12px;font-size:13px}
+.criteria b{display:block;font-family:var(--font-display)}
+.toast{font-size:12px;color:var(--good)}
+.copybox{width:100%;min-height:120px;margin-top:8px}
+@media(max-width:1100px){.workspace{grid-template-columns:1fr}.aside-panels{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:720px){
+  .app{display:block}
+  .side{padding:12px max(16px,env(safe-area-inset-right,0px)) 12px max(16px,env(safe-area-inset-left,0px));gap:8px}
+  .logo{font-size:24px}.caption,.side-note{display:none}
+  .nav{display:flex;overflow-x:auto}.nav button{white-space:nowrap;font-size:12px;padding:9px 10px}
+  .aside-panels{grid-template-columns:1fr}
+  .chat{height:72vh;min-height:480px}.messages{padding:14px}.msg{max-width:96%}
+  .who span{display:none}
+  .vasc{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+/* Auth and consent screens */
+.screen{min-height:100vh;display:grid;place-items:center;padding-block:32px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));background:var(--night)}
+.screen-card{background:var(--paper);border-radius:22px;padding:clamp(22px,4vw,36px);width:100%;max-width:480px;display:grid;gap:14px}
+.screen-card.wide{max-width:640px}
+.screen-card .logo{color:var(--ink);padding:0}
+.screen-card h1{margin:0;font-size:clamp(22px,4vw,28px);letter-spacing:-.5px}
+.screen-card p{margin:0;color:var(--muted)}
+.check{display:flex;gap:10px;align-items:flex-start;font-size:14px;color:var(--ink)}
+.check input{margin-top:4px;flex:none}
+.consent-text{background:var(--tint);border-radius:12px;padding:14px 16px;font-size:13px;color:var(--ink);max-height:280px;overflow:auto}
+.consent-text ul{margin:6px 0;padding-left:18px}
+.error{color:var(--bad);font-size:13px}
+a{color:var(--accent)}
+.people{display:grid;gap:8px;margin-top:14px}
+.person{display:flex;justify-content:space-between;align-items:center;gap:10px;border:1px solid var(--line);border-radius:12px;padding:12px 14px;background:var(--paper);text-align:left;width:100%}
+.person:hover,.person.on{border-color:var(--lamp)}
+.readonly .row-actions,.readonly .edit-grid,.readonly .field{display:none}
+
+.demo-banner{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:var(--lamp);color:#152038;font-size:12px;font-weight:700;text-align:center;padding-block:7px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.demo-banner button{background:none;border:0;text-decoration:underline;font-weight:700;color:inherit;padding:0}
+</style>
+
+
+<!-- Loading -->
+<div class="screen" id="sLoading"><div class="screen-card"><div class="logo"><i aria-hidden="true"></i>lumen</div><p id="loadingMsg">Cargando…</p></div></div>
+
+<!-- Login -->
+<div class="screen" id="sLogin" hidden>
+  <form class="screen-card" id="loginForm">
+    <div class="logo"><i aria-hidden="true"></i>lumen</div>
+    <h1>Lo que aprendes cada día cuenta.</h1>
+    <p>Entra con tu correo. Te enviaremos un enlace para acceder sin contraseña.</p>
+    <label class="field">Correo electrónico<input id="loginEmail" type="email" autocomplete="email" required placeholder="nombre@correo.es"></label>
+    <button class="btn primary" id="loginBtn" type="submit">Enviarme el enlace</button>
+    <p class="error" id="loginError" aria-live="polite"></p>
+    <p class="subtle"><a href="#privacidad">Información sobre protección de datos</a></p>
+  </form>
+</div>
+
+<!-- Check email -->
+<div class="screen" id="sSent" hidden>
+  <div class="screen-card">
+    <div class="logo"><i aria-hidden="true"></i>lumen</div>
+    <h1>Revisa tu correo</h1>
+    <p>Hemos enviado un enlace de acceso a <b id="sentTo"></b>. Ábrelo en este mismo navegador. Si no lo ves en unos minutos, mira en la carpeta de correo no deseado.</p>
+    <button class="btn" id="sentBack" type="button">Usar otro correo</button>
+  </div>
+</div>
+
+<!-- Consent -->
+<div class="screen" id="sConsent" hidden>
+  <form class="screen-card wide" id="consentForm">
+    <div class="logo"><i aria-hidden="true"></i>lumen</div>
+    <h1>Antes de empezar</h1>
+    <p>Lumen es un piloto. Lee cómo tratamos tus datos y confirma que quieres participar.</p>
+    <div class="consent-text">
+      <b>Resumen</b>
+      <ul>
+        <li>Guardamos lo que registras (diario, entrevistas, archivos y objetivo) para construir tu expediente de evidencias.</li>
+        <li>Las preguntas y los análisis los genera Claude, un modelo de IA de Anthropic. Lo que escribes en una entrevista o en el diario se envía a Anthropic para generar la respuesta.</li>
+        <li>Las valoraciones de Lumen son orientativas. No conceden créditos ni sustituyen la evaluación de la universidad.</li>
+        <li>Solo la coordinación del piloto puede ver tus evidencias, y solo si tú lo autorizas abajo. Puedes cambiarlo cuando quieras.</li>
+        <li>Puedes descargar tus datos o eliminar tu cuenta y todo su contenido en cualquier momento desde «Mi cuenta».</li>
+      </ul>
+      <a href="#privacidad">Leer la información completa sobre protección de datos</a>
+    </div>
+    <label class="field">Tu nombre (aparecerá en tu expediente)<input id="cName" required autocomplete="name"></label>
+    <label class="check"><input type="checkbox" id="cAccept" required> He leído la información sobre protección de datos y acepto participar en el piloto.</label>
+    <label class="check"><input type="checkbox" id="cShare"> Autorizo a la coordinación del piloto a ver mis evidencias y mi expediente (opcional).</label>
+    <button class="btn primary" type="submit">Empezar</button>
+    <p class="error" id="consentError" aria-live="polite"></p>
+  </form>
+</div>
+
+<!-- App -->
+<div class="app" id="sApp" hidden>
+  <aside class="side">
+    <div class="logo"><i aria-hidden="true"></i>lumen</div>
+    <div class="caption">Del día a día al crédito</div>
+    <nav class="nav">
+      <button class="on" data-view="agente"><span>✦</span>Hoy</button>
+      <button data-view="evidencias"><span>▤</span>Mis evidencias</button>
+      <button data-view="objetivo"><span>◎</span>Objetivo de acreditación</button>
+      <button data-view="expediente"><span>◈</span>Expediente</button>
+      <button data-view="coordinacion" id="navCoord" hidden><span>◇</span>Coordinación</button>
+      <button data-view="cuenta"><span>○</span>Mi cuenta</button>
+    </nav>
+    <div class="side-note"><strong>Lo que aprendes cuenta.</strong>En el trabajo, el voluntariado o la vida diaria. Lumen te ayuda a documentarlo para que una universidad pueda reconocerlo.</div>
+  </aside>
+
+  <main class="content">
+    <div class="top">
+      <div><small id="eyebrow">Plataforma de evidencias de aprendizaje</small><h1 id="pagetitle">¿Qué has aprendido hoy?</h1></div>
+      <div class="who"><span id="whoName"></span><div class="avatar" id="avatar">TÚ</div></div>
+    </div>
+
+    <!-- HOY -->
+    <section id="agente" class="view on">
+      <div class="workspace">
+        <div class="chat">
+          <div class="chat-head">
+            <div class="agent-icon" aria-hidden="true">✦</div>
+            <div><strong>Entrevista de evidencias</strong><small id="phase">Preparado para acompañarte</small></div>
+            <span class="status live" id="aiStatus">● IA conectada</span>
+          </div>
+          <div class="messages" id="messages" aria-live="polite"></div>
+          <div class="composer">
+            <div class="compose-line">
+              <textarea id="answer" rows="1" placeholder="Responde a Lumen…" aria-label="Tu respuesta"></textarea>
+              <button class="send" id="send">Enviar ↗</button>
+            </div>
+            <div class="help" id="helpLine">Enter para enviar · Mayús+Enter para nueva línea · Entrevista guiada por Claude</div>
+          </div>
+        </div>
+        <div class="aside-panels">
+          <div class="panel">
+            <h3>Hacia tu acreditación</h3>
+            <div class="subtle" id="targetLine"></div>
+            <div class="statrow">
+              <div class="stat"><strong id="kReady">0/0</strong><small>Resultados listos</small></div>
+              <div class="stat"><strong id="kHours">0</strong><small>Horas</small></div>
+              <div class="stat"><strong id="kEcts">0</strong><small>ECTS equiv.</small></div>
+            </div>
+            <div class="ra-mini" id="raMini"></div>
+            <button class="btn block" data-goto="expediente">Ver expediente →</button>
+          </div>
+          <div class="panel">
+            <h3>Diario rápido</h3>
+            <div class="subtle">Dos minutos al final del día. Lumen lo vincula a tus resultados de aprendizaje.</div>
+            <form class="form" id="diaryForm">
+              <label class="field">Qué hiciste o aprendiste
+                <textarea id="dText" required placeholder="Ej.: Preparé el informe trimestral de ventas y aprendí a hacer tablas dinámicas para comparar regiones."></textarea>
+              </label>
+              <div class="two">
+                <label class="field">Contexto
+                  <select id="dCtx"><option>Trabajo</option><option>Voluntariado</option><option>Formación no reglada</option><option>Vida diaria / autodidacta</option></select>
+                </label>
+                <label class="field">Horas
+                  <input id="dHours" type="number" min="0" max="200" step="0.5" value="1">
+                </label>
+              </div>
+              <label class="field">Fecha<input id="dDate" type="date"></label>
+              <label class="field">Producto o prueba (opcional, máx. 25 MB)<input id="dFile" type="file"></label>
+              <button class="btn primary" id="dSave" type="submit">Guardar en el diario</button>
+              <span class="toast" id="dToast" aria-live="polite"></span>
+            </form>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- EVIDENCIAS -->
+    <section id="evidencias" class="view">
+      <div class="full">
+        <h2>Mis evidencias</h2>
+        <p class="note">Cada evidencia se valora con cuatro criterios. <b>Validez</b> y <b>suficiencia</b> las estima Lumen a partir de lo que cuentas. <b>Autenticidad</b> sube cuando adjuntas un producto y cuando alguien confirma tu aprendizaje. <b>Vigencia</b> depende de cuándo ocurrió.</p>
+        <div id="evidenceList" class="items"></div>
+        <button class="btn primary" data-go-chat>＋ Nueva entrevista</button>
+      </div>
+    </section>
+
+    <!-- OBJETIVO -->
+    <section id="objetivo" class="view">
+      <div class="full">
+        <h2>Objetivo de acreditación</h2>
+        <p class="note">Indica la titulación y la asignatura en la que quieres pedir reconocimiento, y copia sus resultados de aprendizaje de la guía docente. Lumen orientará las entrevistas hacia ellos. Si aún no tienes un objetivo, puedes trabajar con las competencias transversales genéricas.</p>
+        <form class="form" id="profileForm" style="max-width:860px">
+          <div class="edit-grid">
+            <label class="field">Universidad<input id="pUni" placeholder="Ej.: Universidad del País Vasco"></label>
+            <label class="field">Titulación<input id="pTit" placeholder="Ej.: Grado en Administración y Dirección de Empresas"></label>
+            <label class="field">Asignatura o módulo<input id="pAsig" placeholder="Ej.: Análisis de datos para la gestión"></label>
+            <label class="field">Créditos ECTS de la asignatura<input id="pEcts" type="number" min="0" max="60" step="0.5" placeholder="6"></label>
+          </div>
+          <label class="field">Resultados de aprendizaje (uno por línea)
+            <textarea id="pRA" style="min-height:170px"></textarea>
+          </label>
+          <details class="more">
+            <summary>Pegar la guía docente y extraer los resultados con IA</summary>
+            <label class="field" style="margin-top:10px">Texto de la guía docente
+              <textarea id="pGuide" style="min-height:140px" placeholder="Pega aquí el apartado de competencias o resultados de aprendizaje de la guía docente."></textarea>
+            </label>
+            <div class="row-actions"><button class="btn small" type="button" id="pExtract">Extraer resultados</button><span class="toast" id="pExtractMsg"></span></div>
+          </details>
+          <div class="row-actions">
+            <button class="btn primary" type="submit">Guardar objetivo</button>
+            <button class="btn" type="button" id="pGeneric">Usar competencias genéricas</button>
+            <span class="toast" id="pToast" aria-live="polite"></span>
+          </div>
+        </form>
+      </div>
+      <div class="full">
+        <h2>Cómo valora Lumen tus evidencias</h2>
+        <p class="note">Son los criterios habituales en los procesos de reconocimiento de aprendizajes por experiencia. Cada universidad aplica su propio procedimiento.</p>
+        <div class="criteria">
+          <div><b>Validez</b>La evidencia se relaciona con un resultado de aprendizaje concreto de la asignatura.</div>
+          <div><b>Autenticidad</b>El aprendizaje es tuyo y se puede comprobar: un producto que hiciste y la confirmación de alguien que lo vio.</div>
+          <div><b>Suficiencia</b>Hay bastante profundidad y variedad: explicas, aplicas, das ejemplos y reconoces límites.</div>
+          <div><b>Vigencia</b>El aprendizaje es reciente. Lumen considera vigente lo ocurrido en los últimos cinco años.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- EXPEDIENTE -->
+    <section id="expediente" class="view">
+      <div class="full">
+        <h2 id="dossierTitle">Expediente de reconocimiento</h2>
+        <p class="note">Un resultado de aprendizaje queda listo para presentar cuando cumple las cinco comprobaciones: al menos dos evidencias, un producto adjunto, la confirmación de un tercero, profundidad suficiente y vigencia.</p>
+        <div class="kpis" id="dossierKpis"></div>
+        <div class="matrix" id="dossierMatrix"></div>
+        <div class="row-actions">
+          <button class="btn primary" id="exportHtml">↓ Descargar expediente (HTML)</button>
+        </div>
+        <p class="notice" style="margin-top:20px">Lumen no concede créditos. El reconocimiento lo resuelve la universidad según su normativa. En España, la experiencia laboral y profesional puede reconocerse hasta el 15&nbsp;% de los créditos de una titulación, siempre que esté relacionada con sus competencias. Consulta con la secretaría o la comisión de reconocimiento de tu centro antes de presentar el expediente.</p>
+      </div>
+    </section>
+
+    <!-- COORDINACIÓN -->
+    <section id="coordinacion" class="view">
+      <div class="full">
+        <h2>Participantes que comparten su expediente</h2>
+        <p class="note">Solo aparecen quienes han autorizado a la coordinación a ver sus evidencias. La vista es de solo lectura.</p>
+        <div class="people" id="people"></div>
+      </div>
+      <div class="full" id="coordDetail" hidden>
+        <h2 id="coordName"></h2>
+        <p class="note" id="coordTarget"></p>
+        <div class="kpis" id="coordKpis"></div>
+        <div class="matrix" id="coordMatrix"></div>
+        <div class="row-actions"><button class="btn primary" id="coordExport">↓ Descargar su expediente (HTML)</button></div>
+        <div class="items readonly" id="coordEvidences"></div>
+      </div>
+    </section>
+
+    <!-- CUENTA -->
+    <section id="cuenta" class="view">
+      <div class="full">
+        <h2>Mi cuenta</h2>
+        <form class="form" id="accountForm" style="max-width:560px">
+          <label class="field">Nombre<input id="aName" autocomplete="name"></label>
+          <label class="check"><input type="checkbox" id="aShare"> Autorizo a la coordinación del piloto a ver mis evidencias y mi expediente.</label>
+          <div class="row-actions"><button class="btn primary" type="submit">Guardar</button><span class="toast" id="aToast" aria-live="polite"></span></div>
+        </form>
+      </div>
+      <div class="full">
+        <h2>Tus datos</h2>
+        <p class="note">Puedes descargar todo lo que has registrado o eliminar tu cuenta. Al eliminarla se borran tus evidencias, tus archivos y tu acceso, y no se puede deshacer.</p>
+        <div class="row-actions">
+          <button class="btn" id="exportJson">↓ Descargar mis datos (JSON)</button>
+          <button class="btn" id="logout">Cerrar sesión</button>
+          <button class="btn danger" id="deleteAccount">Eliminar mi cuenta</button>
+          <span class="toast" id="accMsg" aria-live="polite"></span>
+        </div>
+        <p class="subtle" style="margin-top:14px"><a href="#privacidad">Información sobre protección de datos</a></p>
+      </div>
+    </section>
+  </main>
+</div>
+
+
+<script>
+// Demo backend for claude.ai: an in-browser stand-in for Supabase and the /api routes.
+// The production app.js runs unchanged on top of it.
+(function () {
+  const KEY = "lumen_demo_v1";
+  const ME = "00000000-0000-4000-8000-000000000001";
+  const OTHER = "00000000-0000-4000-8000-000000000002";
+  const use = (n) => (window.claude?.use ? window.claude.use(n) : Promise.resolve(null));
+
+  function seed() {
+    return {
+      session: null,
+      perfiles: [
+        { user_id: ME, nombre: "", role: "coordinador", consentimiento_at: null, consentimiento_version: null, compartir_con_coordinacion: false, objetivo: {}, created_at: new Date().toISOString() },
+        { user_id: OTHER, nombre: "Participante de ejemplo", role: "participante", consentimiento_at: "2026-10-01T09:00:00Z", consentimiento_version: "piloto-v1", compartir_con_coordinacion: true, objetivo: {}, created_at: "2026-10-01T09:00:00Z" },
+      ],
+      evidencias: [
+        { id: "e0000000-0000-4000-8000-000000000001", user_id: OTHER, created_at: "2026-10-05T18:00:00Z", data: { id: "e0000000-0000-4000-8000-000000000001", kind: "evidence", tipo: "entrevista", titulo: "Coordinación de un banco de alimentos (ejemplo)", fecha: "2026-09-20", createdAt: 1, contexto: "Voluntariado", horas: 20, resultados: ["C5", "C3"], evidencias: { idea: "Explica cómo organizó turnos de 15 voluntarios con una hoja compartida.", aplicacion: "Redujo los huecos de cobertura del sábado.", limites: "Reconoce que le falta formación en gestión de conflictos." }, criterios: { validez: 2, suficiencia: 2 }, falta: "Adjuntar la planilla de turnos y la confirmación de la coordinadora.", artefactos: [], verificacion: { nombre: "Coordinadora del banco", rol: "Responsable de voluntariado", contacto: "", estado: "solicitada" }, dialogue: [] } },
+      ],
+    };
+  }
+  let db;
+  try { db = JSON.parse(localStorage.getItem(KEY)) || seed(); } catch { db = seed(); }
+  const persist = () => { try { localStorage.setItem(KEY, JSON.stringify(db)); } catch {} };
+  const blobs = new Map();
+
+  /* ---------- Query builder (the subset app.js uses) ---------- */
+  class Query {
+    constructor(table) { this.t = table; this.filters = []; this.op = "select"; this.one = null; }
+    select() { return this; }
+    eq(k, v) { this.filters.push((r) => r[k] === v); return this; }
+    neq(k, v) { this.filters.push((r) => r[k] !== v); return this; }
+    order(k) { this.sort = k; return this; }
+    maybeSingle() { this.one = "maybe"; return this; }
+    single() { this.one = "single"; return this; }
+    insert(row) { this.op = "insert"; this.payload = row; return this; }
+    update(patch) { this.op = "update"; this.payload = patch; return this; }
+    upsert(row) { this.op = "upsert"; this.payload = row; return this; }
+    delete() { this.op = "delete"; return this; }
+    rows() { return db[this.t].filter((r) => this.filters.every((f) => f(r))); }
+    run() {
+      const uid = db.session?.user?.id;
+      if (this.op === "select") {
+        let rows = this.rows();
+        if (this.t === "perfiles") rows = rows.filter((r) => r.user_id === uid || (r.compartir_con_coordinacion && db.perfiles.find((p) => p.user_id === uid)?.role === "coordinador"));
+        if (this.sort) rows = [...rows].sort((a, b) => String(a[this.sort] || "").localeCompare(String(b[this.sort] || "")));
+        rows = structuredClone(rows);
+        if (this.one) return { data: rows[0] ?? null, error: rows[0] || this.one === "maybe" ? null : { message: "not found" } };
+        return { data: rows, error: null };
+      }
+      if (this.op === "insert") {
+        if (db[this.t].some((r) => r.user_id === this.payload.user_id && this.t === "perfiles")) return { error: { code: "23505" } };
+        db[this.t].push({ role: "participante", consentimiento_at: null, compartir_con_coordinacion: false, objetivo: {}, ...structuredClone(this.payload) });
+      }
+      if (this.op === "update") this.rows().forEach((r) => Object.assign(r, structuredClone(this.payload)));
+      if (this.op === "upsert") {
+        const p = structuredClone(this.payload), i = db[this.t].findIndex((r) => r.id === p.id);
+        if (i >= 0) Object.assign(db[this.t][i], p); else db[this.t].push({ user_id: uid, created_at: new Date().toISOString(), ...p });
+      }
+      if (this.op === "delete") { const kill = new Set(this.rows()); db[this.t] = db[this.t].filter((r) => !kill.has(r)); }
+      persist();
+      return { data: null, error: null };
+    }
+    then(res, rej) { return Promise.resolve().then(() => this.run()).then(res, rej); }
+  }
+
+  let listeners = [];
+  const emit = (ev) => listeners.forEach((fn) => fn(ev, db.session));
+  window.supabase = {
+    createClient() {
+      return {
+        auth: {
+          getSession: async () => ({ data: { session: db.session } }),
+          onAuthStateChange(fn) { listeners.push(fn); return { data: { subscription: { unsubscribe() {} } } }; },
+          async signInWithOtp({ email }) {
+            // Demo: the "email link" opens itself after a moment.
+            setTimeout(() => {
+              db.session = { access_token: "demo", user: { id: ME, email } };
+              persist(); emit("SIGNED_IN");
+            }, 2200);
+            return { error: null };
+          },
+          async signOut() { db.session = null; persist(); emit("SIGNED_OUT"); return { error: null }; },
+        },
+        from: (t) => new Query(t),
+        storage: {
+          from: () => ({
+            async upload(path, file) { blobs.set(path, file); return { data: { path }, error: null }; },
+            async remove(paths) { paths.forEach((p) => blobs.delete(p)); return { error: null }; },
+            async createSignedUrl(path) { return blobs.has(path) ? { data: { signedUrl: URL.createObjectURL(blobs.get(path)) }, error: null } : { data: null, error: {} }; },
+          }),
+        },
+      };
+    },
+  };
+
+  /* ---------- /api routes, answered by Claude through claude.ai ---------- */
+  const SYSTEM = (obj) => {
+    const nombre = obj?.generico ? "competencias transversales (genérico)" : [obj?.asignatura, obj?.titulacion, obj?.universidad].filter(Boolean).join(" · ");
+    const ras = (obj?.resultados || []).map((r) => `${r.id}: ${r.texto}`).join("\n");
+    return `Eres Lumen, un agente que ayuda a una persona a convertir lo que aprende en su día a día (trabajo, voluntariado, formación no reglada, vida diaria) en evidencias que una universidad pueda valorar para reconocerle créditos.
+
+Objetivo de acreditación: ${nombre}.
+Resultados de aprendizaje del objetivo:
+${ras}
+
+Las evidencias deben ser válidas, auténticas, suficientes y vigentes. A lo largo de la entrevista consigue, sin convertirla en un interrogatorio: 1) qué aprendió y cómo lo explica; 2) un caso concreto en el que lo aplicó y qué resultado obtuvo; 3) el contexto, una fecha aproximada y cuántas horas le dedicó; 4) qué producto verificable generó que pueda adjuntar; 5) quién podría confirmarlo (nombre y rol); 6) qué límites tiene su dominio.
+Orienta las preguntas hacia los resultados de aprendizaje con los que encaja lo que cuenta.
+Estilo: español; tono cálido y exigente; como mucho una frase que recoja algo concreto de lo que dijo y después UNA sola pregunta abierta; sin listas ni markdown; máximo 70 palabras. No prometas créditos.`;
+  };
+  const myObj = () => { const p = db.perfiles.find((x) => x.user_id === db.session?.user?.id); return p?.objetivo?.resultados?.length ? p.objetivo : { generico: true, resultados: [{ id: "C1", texto: "Analiza críticamente información y argumentos, identificando evidencias, sesgos y límites." }, { id: "C2", texto: "Utiliza tecnologías digitales y datos de forma reflexiva, eficaz y ética." }, { id: "C3", texto: "Comunica ideas complejas con claridad, de forma oral y escrita, a públicos diversos." }, { id: "C4", texto: "Participa en contextos sociales y ciudadanos con criterio y responsabilidad." }, { id: "C5", texto: "Planifica y gestiona proyectos, y coordina o lidera equipos." }] }; };
+  const fail = (status, error) => new Response(JSON.stringify({ error }), { status, headers: { "Content-Type": "application/json" } });
+  const json = (o) => new Response(JSON.stringify(o), { headers: { "Content-Type": "application/json" } });
+
+  const realFetch = window.fetch.bind(window);
+  window.fetch = async (url, init = {}) => {
+    const path = typeof url === "string" ? url : url.url;
+    if (path === "/api/config") return json({ supabaseUrl: "demo", supabaseAnonKey: "demo" });
+    if (path === "/api/account") { const uid = db.session?.user?.id; db.perfiles = db.perfiles.filter((p) => p.user_id !== uid); db.evidencias = db.evidencias.filter((e) => e.user_id !== uid); persist(); return new Response(null, { status: 204 }); }
+    if (!path.startsWith("/api/")) return realFetch(url, init);
+    const sample = await use("sample");
+    if (!sample) return fail(503, "La IA no está disponible en esta vista de la demo.");
+    const body = JSON.parse(init.body || "{}"), obj = myObj(), ids = obj.resultados.map((r) => r.id);
+    try {
+      if (path === "/api/chat") {
+        const msgs = body.history.map((m) => ({ ...m }));
+        msgs[0] = { role: "user", content: `${SYSTEM(obj)}\n\nLo que quiero documentar: «${body.titulo}».\n\n${msgs[0].content}` };
+        if (body.closing) msgs[msgs.length - 1].content += "\n\n[Instrucción: cierra la entrevista. Pide que formule en dos o tres frases lo que ahora sabe hacer, la prueba que mejor lo demuestra y lo que aún le falta. Si prefiere seguir, que escriba «seguir».]";
+        const enc = new TextEncoder();
+        const stream = new ReadableStream({
+          async start(ctrl) {
+            let sent = 0;
+            try {
+              const r = await sample(msgs, { cache: false, onText: ({ text }) => { ctrl.enqueue(enc.encode(text.slice(sent))); sent = text.length; } });
+              if (r.text.length > sent) ctrl.enqueue(enc.encode(r.text.slice(sent)));
+              ctrl.close();
+            } catch (e) { ctrl.error(e); }
+          },
+        });
+        return new Response(stream, { headers: { "Content-Type": "text/plain" } });
+      }
+      if (body.kind === "interview") {
+        const transcript = body.history.map((m) => (m.role === "user" ? "Persona" : "Lumen") + ": " + m.content).join("\n");
+        const o = await sample.json(`Analiza esta entrevista para un expediente de reconocimiento académico de aprendizajes por experiencia. Usa solo lo que dijo la persona; no inventes.
+Resultados disponibles:
+${obj.resultados.map((r) => r.id + ": " + r.texto).join("\n")}
+Responde con solo un objeto JSON: {"titulo":"máx. 8 palabras","evidencias":{"idea":"","aplicacion":"","argumentacion":"","conexion":"","limites":""},"resultados":["ID"],"validez":0,"suficiencia":0,"contexto":"Trabajo|Voluntariado|Formación no reglada|Vida diaria / autodidacta|","horas":0,"fecha":"AAAA-MM-DD o vacío","verificador_nombre":"","verificador_rol":"","falta":"una frase"}
+Evidencias: 1-2 frases en tercera persona por apartado, "" si no hay. resultados: 0 a 3 IDs. validez y suficiencia de 0 a 3. Hoy es ${new Date().toISOString().slice(0, 10)}.
+
+Entrevista sobre «${body.titulo}»:
+${transcript.slice(-14000)}`);
+        return json({ ...o, resultados: (o.resultados || []).filter((x) => ids.includes(x)).slice(0, 3) });
+      }
+      if (body.kind === "diary") {
+        const o = await sample.json(`Vincula esta entrada de diario de aprendizaje con resultados de aprendizaje universitarios. Usa solo lo escrito.
+Resultados:
+${obj.resultados.map((r) => r.id + ": " + r.texto).join("\n")}
+Entrada (${body.contexto}, ${body.horas} h): «${body.texto}»
+Responde con solo JSON: {"titulo":"máx. 8 palabras","resultados":["ID"],"validez":0,"suficiencia":0,"falta":"una frase"}`, { modelTier: "quick" });
+        return json({ ...o, resultados: (o.resultados || []).filter((x) => ids.includes(x)).slice(0, 3) });
+      }
+      if (body.kind === "extract") {
+        const arr = await sample.json(`Extrae de esta guía docente los resultados de aprendizaje (o, si no hay, las competencias específicas) tal como están redactados, sin códigos. Máximo 12. Responde con solo un array JSON de strings.\n\n${String(body.guia).slice(0, 20000)}`);
+        return json({ resultados: (Array.isArray(arr) ? arr : []).filter((s) => typeof s === "string" && s.trim()) });
+      }
+      return fail(400, "Tipo de análisis desconocido.");
+    } catch (e) {
+      return fail(e?.code === "rate_limited" ? 429 : e?.code === "not_granted" ? 403 : 502, e?.code === "not_granted" ? "Para usar la IA en la demo, permite el acceso a Claude cuando la página lo pida." : "La IA no respondió. Inténtalo de nuevo.");
+    }
+  };
+  window.__lumenDemoReset = () => { try { localStorage.removeItem(KEY); } catch {} location.reload(); };
+})();
+
+</script>
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const MAX_TURNS = 7, HOURS_PER_ECTS_MIN = 25, HOURS_PER_ECTS_MAX = 30, VIGENCIA_YEARS = 5;
+const CONSENT_VERSION = "piloto-v1";
+const BUCKET = "artefactos";
+const MAX_FILE_BYTES = 25 * 1024 * 1024;
+const GENERIC_RA = [
+  { id: "C1", texto: "Analiza críticamente información y argumentos, identificando evidencias, sesgos y límites." },
+  { id: "C2", texto: "Utiliza tecnologías digitales y datos de forma reflexiva, eficaz y ética." },
+  { id: "C3", texto: "Comunica ideas complejas con claridad, de forma oral y escrita, a públicos diversos." },
+  { id: "C4", texto: "Participa en contextos sociales y ciudadanos con criterio y responsabilidad." },
+  { id: "C5", texto: "Planifica y gestiona proyectos, y coordina o lidera equipos." },
+];
+const GENERIC_OBJ = { universidad: "", titulacion: "", asignatura: "", ects: "", resultados: GENERIC_RA, generico: true };
+const GENERIC_KEYS = { C1: ["critica", "argument", "evidencia", "sesgo", "cuestion", "razon", "analiz"], C2: ["inteligencia artificial", "algoritmo", "automat", "tecnolog", "datos", "excel", "programa", "digital"], C3: ["dialog", "escucha", "comunic", "narrativ", "explicar", "present", "escrib"], C4: ["democr", "particip", "ciudadan", "deliber", "social", "comunidad", "voluntari"], C5: ["lider", "equipo", "gestion", "proyecto", "estrateg", "planific", "coordin"] };
+const EV_LABELS = { idea: "Qué aprendió", aplicacion: "Aplicación", argumentacion: "Argumentación", conexion: "Conexión con su experiencia", limites: "Límites y dudas", sintesis: "Síntesis final", texto: "Registro del diario" };
+const CRIT = [["validez", "Validez"], ["autenticidad", "Autenticidad"], ["suficiencia", "Suficiencia"], ["vigencia", "Vigencia"]];
+const CONTEXTOS = ["Trabajo", "Voluntariado", "Formación no reglada", "Vida diaria / autodidacta"];
+
+const safe = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+const normalize = (s) => (s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+const uid = () => (crypto.randomUUID ? crypto.randomUUID() : "10000000-1000-4000-8000-100000000000".replace(/[018]/g, (c) => (c ^ (crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (c / 4)))).toString(16)));
+const today = () => new Date().toISOString().slice(0, 10);
+const fmtDate = (d) => { try { return new Date(d + "T12:00:00").toLocaleDateString("es-ES", { day: "numeric", month: "short", year: "numeric" }); } catch { return d; } };
+const num = (v) => { const n = parseFloat(v); return isFinite(n) && n >= 0 ? n : 0; };
+const clamp03 = (v) => Math.max(0, Math.min(3, Math.round(Number(v) || 0)));
+const fmtN = (n) => (Math.round(n * 10) / 10).toLocaleString("es-ES");
+const byDate = (a, b) => (a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : 0);
+
+/* ================= Session and data ================= */
+let sb = null, session = null, perfil = null, objetivo = GENERIC_OBJ, evidences = [];
+
+function showScreen(name) {
+  for (const [id, n] of [["sLoading", "loading"], ["sLogin", "login"], ["sSent", "sent"], ["sConsent", "consent"], ["sApp", "app"]]) $(id).hidden = n !== name;
+}
+
+async function boot() {
+  try {
+    const cfg = await fetch("/api/config").then((r) => { if (!r.ok) throw new Error(); return r.json(); });
+    sb = supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey, { auth: { persistSession: true, detectSessionInUrl: true, flowType: "pkce" } });
+  } catch {
+    $("loadingMsg").textContent = "Lumen no está disponible en este momento. Inténtalo de nuevo en unos minutos.";
+    return;
+  }
+  const { data } = await sb.auth.getSession();
+  session = data.session;
+  sb.auth.onAuthStateChange((event, s) => {
+    const changed = (s?.user?.id || null) !== (session?.user?.id || null);
+    session = s;
+    if (changed) route();
+  });
+  route();
+}
+
+let routing = 0;
+async function route() {
+  const token = ++routing;
+  if (!session) { showScreen("login"); return; }
+  showScreen("loading");
+  try {
+    await loadPerfil();
+    if (token !== routing) return;
+    if (!perfil.consentimiento_at) {
+      $("cName").value = perfil.nombre || "";
+      showScreen("consent");
+      return;
+    }
+    await loadEvidences();
+    if (token !== routing) return;
+    enterApp();
+  } catch (e) {
+    console.error(e);
+    $("loadingMsg").textContent = "No se pudieron cargar tus datos. Recarga la página para intentarlo de nuevo.";
+  }
+}
+
+async function loadPerfil() {
+  const me = session.user.id;
+  let { data, error } = await sb.from("perfiles").select("*").eq("user_id", me).maybeSingle();
+  if (error) throw error;
+  if (!data) {
+    const ins = await sb.from("perfiles").insert({ user_id: me, nombre: "" });
+    if (ins.error && ins.error.code !== "23505") throw ins.error;
+    ({ data, error } = await sb.from("perfiles").select("*").eq("user_id", me).single());
+    if (error) throw error;
+  }
+  perfil = data;
+  objetivo = perfil.objetivo?.resultados?.length ? perfil.objetivo : GENERIC_OBJ;
+}
+async function loadEvidences() {
+  const { data, error } = await sb.from("evidencias").select("id,data,created_at").eq("user_id", session.user.id).order("created_at");
+  if (error) throw error;
+  evidences = data.map((r) => r.data);
+}
+async function updatePerfil(patch) {
+  const { error } = await sb.from("perfiles").update(patch).eq("user_id", session.user.id);
+  if (error) throw error;
+  Object.assign(perfil, patch);
+}
+async function saveEvidence(e) {
+  const i = evidences.findIndex((x) => x.id === e.id);
+  if (i >= 0) evidences[i] = e; else evidences.push(e);
+  render();
+  const { error } = await sb.from("evidencias").upsert({ id: e.id, data: e });
+  if (error) { console.error(error); throw new Error("No se pudo guardar. Revisa tu conexión e inténtalo de nuevo."); }
+}
+async function deleteEvidence(e) {
+  const paths = (e.artefactos || []).map((a) => a.path).filter(Boolean);
+  if (paths.length) await sb.storage.from(BUCKET).remove(paths);
+  const { error } = await sb.from("evidencias").delete().eq("id", e.id);
+  if (error) throw new Error("No se pudo eliminar.");
+  evidences = evidences.filter((x) => x.id !== e.id);
+  render();
+}
+async function uploadFile(file, evidenceId) {
+  if (file.size > MAX_FILE_BYTES) throw new Error("El archivo supera los 25 MB.");
+  const clean = file.name.normalize("NFD").replace(/[^\w.-]+/g, "_").slice(-80);
+  const path = `${session.user.id}/${evidenceId}/${Date.now()}-${clean}`;
+  const { error } = await sb.storage.from(BUCKET).upload(path, file, { contentType: file.type || undefined, upsert: false });
+  if (error) throw new Error("No se pudo subir el archivo.");
+  return { name: file.name, path, size: file.size, subidoEl: new Date().toISOString() };
+}
+async function openFile(path) {
+  const w = window.open("", "_blank");
+  const { data, error } = await sb.storage.from(BUCKET).createSignedUrl(path, 300);
+  if (error || !data?.signedUrl) { w?.close(); alert("No se pudo abrir el archivo."); return; }
+  if (w) w.location = data.signedUrl; else location.href = data.signedUrl;
+}
+
+/* ================= AI calls ================= */
+let aiOk = true;
+async function api(path, body) {
+  const { data } = await sb.auth.getSession();
+  const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + (data.session?.access_token || "") }, body: JSON.stringify(body) });
+  if (!r.ok) {
+    let msg = "La IA no está disponible ahora mismo.";
+    try { msg = (await r.json()).error || msg; } catch {}
+    const err = new Error(msg); err.status = r.status; throw err;
+  }
+  return r;
+}
+function aiState(ok, msg) {
+  aiOk = ok;
+  const st = $("aiStatus");
+  st.textContent = ok ? "● IA conectada" : "IA no disponible";
+  st.classList.toggle("live", ok);
+  if (msg) $("helpLine").textContent = msg;
+}
+
+/* ================= Criteria ================= */
+function yearsAgo(fecha) { const t = new Date(fecha + "T12:00:00").getTime(); return isFinite(t) ? (Date.now() - t) / 31557600000 : 99; }
+function autenticidad(e) {
+  const art = (e.artefactos || []).length > 0, conf = e.verificacion?.estado === "confirmada";
+  if (art && conf) return 3; if (conf || art) return 2;
+  if (e.contexto && e.fecha && e.horas > 0) return 1; return 0;
+}
+function vigencia(e) { const y = yearsAgo(e.fecha); return y <= 2 ? 3 : y <= VIGENCIA_YEARS ? 2 : y <= 10 ? 1 : 0; }
+function scoresOf(e) { return { validez: clamp03(e.criterios?.validez), suficiencia: clamp03(e.criterios?.suficiencia), autenticidad: autenticidad(e), vigencia: vigencia(e) }; }
+function outcomeStatus(ra, evs) {
+  const linked = evs.filter((e) => (e.resultados || []).includes(ra.id));
+  const checks = {
+    cantidad: linked.length >= 2,
+    producto: linked.some((e) => (e.artefactos || []).length),
+    tercero: linked.some((e) => e.verificacion?.estado === "confirmada"),
+    profundidad: linked.some((e) => { const s = scoresOf(e); return s.validez >= 2 && s.suficiencia >= 2; }),
+    vigente: linked.some((e) => vigencia(e) >= 2),
+  };
+  const n = Object.values(checks).filter(Boolean).length;
+  const horas = linked.reduce((a, e) => a + num(e.horas), 0);
+  const label = !linked.length ? "Sin evidencias" : n === 5 ? "Lista para presentar" : n >= 3 ? "Casi lista" : "En construcción";
+  return { linked, checks, n, horas, label, cls: n === 5 ? "ok" : n >= 3 ? "warn" : "" };
+}
+const totalHours = (evs) => evs.reduce((a, e) => a + num(e.horas), 0);
+const ectsRange = (h) => [h / HOURS_PER_ECTS_MAX, h / HOURS_PER_ECTS_MIN];
+const targetName = (obj) => (obj.generico ? "competencias transversales (genérico)" : [obj.asignatura, obj.titulacion, obj.universidad].filter(Boolean).join(" · ") || "sin definir");
+
+/* ================= Rule-based fallback (used when the AI is unavailable) ================= */
+const stop = new Set("sobre porque para desde hasta entre cuando donde como cual cuales este esta estos estas unos unas otros otras pero puede pueden hacer tiene tienen seria habia algo esto aquello mediante despues antes siempre nunca mucho pocos forma manera idea tema contenido podcast libro video articulo experiencia aprendizaje concepto ejemplo importante central principal realmente aprendido creo pienso parece entiendo habla trata explica segun tambien entonces haber sido estoy somos utiliza diversos".split(" "));
+function concepts(t, n = 4) { const w = normalize(t).replace(/https?:\/\/\S+/g, " ").match(/[a-zñ]{5,}/g) || []; const f = {}; w.filter((x) => !stop.has(x)).forEach((x) => (f[x] = (f[x] || 0) + 1)); return Object.keys(f).sort((a, b) => f[b] - f[a]).slice(0, n); }
+function topic(t) { const c = concepts(t); return c.length ? c.slice(0, 2).join(" y ") : "lo que acabas de contar"; }
+function classify(t) {
+  const n = normalize(t);
+  if (/no se|ni idea|no recuerdo|no entiendo|no sabria|me cuesta/.test(n)) return "uncertain";
+  if (/pero|sin embargo|aunque|problema|riesgo|limite|duda|critica/.test(n)) return "critical";
+  if (/por ejemplo|en mi trabajo|en mi caso|en un proyecto|cuando hice/.test(n)) return "practical";
+  if (/porque|debido|ya que|por eso|evidencia|demuestra/.test(n)) return "reasoning";
+  return "explore";
+}
+function ruleQuestion(t) {
+  const k = draft.turns.length;
+  if (k === 2) return "¿En qué contexto ocurrió (trabajo, voluntariado, formación, vida diaria), más o menos cuándo, y cuántas horas le has dedicado?";
+  if (k === 4) return "¿Qué producto concreto generaste que puedas adjuntar (un documento, informe, código, material…) y quién podría confirmar lo que hiciste? Dime su nombre y su rol.";
+  const f = topic(t), bank = {
+    uncertain: [`No pasa nada por no tenerlo claro. ¿Qué parte de «${f}» sí puedes explicar con tus palabras?`, `Probemos con algo concreto: ¿cuándo te encontraste con ${f} por última vez?`],
+    critical: [`Has señalado una dificultad con ${f}. ¿Cómo la resolviste y qué harías distinto la próxima vez?`, `¿Qué objeción haría alguien experto a tu forma de abordar ${f}?`],
+    practical: [`Ese caso ayuda. ¿Qué decisión tomaste en ${f} y con qué criterio?`, `¿Cómo supiste que lo que hiciste con ${f} funcionó? ¿Qué resultado observable hubo?`],
+    reasoning: [`Explicas una causa sobre ${f}. ¿Qué dato o hecho concreto lo respalda?`, `¿En qué situación no funcionaría lo que propones sobre ${f}?`],
+    explore: [`Has mencionado ${f}. ¿Puedes contarme un caso concreto en el que lo aplicaste?`, `Si tuvieras que enseñar ${f} a una persona nueva en tu equipo, ¿cómo lo explicarías?`, `¿Qué sabes hacer ahora con ${f} que antes no sabías?`],
+  };
+  let opts = bank[classify(t)].filter((q) => !draft.used.includes(q)); if (!opts.length) opts = bank[classify(t)];
+  const q = opts[(k + concepts(t).join("").length) % opts.length]; draft.used.push(q); return q;
+}
+function ruleLink(text) {
+  const n = " " + normalize(text) + " ";
+  if (objetivo.generico) return Object.entries(GENERIC_KEYS).filter(([, keys]) => keys.some((w) => n.includes(w))).map(([id]) => id);
+  const words = concepts(text, 40);
+  return objetivo.resultados.filter((r) => concepts(r.texto, 20).some((w) => words.some((x) => x.slice(0, 6) === w.slice(0, 6)))).map((r) => r.id);
+}
+
+/* ================= Chat ================= */
+function bubble(text, who = "agent") {
+  const div = document.createElement("div"); div.className = "msg " + who;
+  div.innerHTML = `<div class="mini">${who === "agent" ? "✦" : "TÚ"}</div><div class="bubble"></div>`;
+  div.querySelector(".bubble").textContent = text;
+  $("messages").append(div); $("messages").scrollTop = $("messages").scrollHeight;
+  return div.querySelector(".bubble");
+}
+function choices(items) {
+  document.querySelectorAll(".choices").forEach((x) => x.remove());
+  const box = document.createElement("div"); box.className = "choices";
+  items.forEach((item) => { const b = document.createElement("button"); b.textContent = item; b.onclick = () => { box.remove(); submit(item); }; box.append(b); });
+  $("messages").append(box); $("messages").scrollTop = $("messages").scrollHeight;
+}
+const PHASES = { start: "Preparado para acompañarte", type: "Eligiendo qué documentar", titleAsk: "Eligiendo qué documentar", dialogue: "Recogiendo evidencias", review: "Síntesis final", done: "Evidencia registrada" };
+function setPhase() { $("phase").textContent = PHASES[stage] || "En conversación"; }
+function ask(text, options) { bubble(text); setPhase(); if (options) choices(options); $("answer").focus(); }
+
+let stage = "start", draft = null, busy = false;
+function begin(seed) {
+  draft = { id: uid(), titulo: "", fuente: "", url: "", turns: [], used: [], history: [], createdAt: Date.now() };
+  if (seed) { draft.titulo = seed; stage = "dialogue"; ask(`Vamos a documentar «${seed}». Cuéntame con tus palabras qué aprendiste y en qué situación.`); return; }
+  stage = "type";
+  ask("¿Qué quieres documentar hoy? Puede ser una tarea del trabajo, un proyecto, un voluntariado, un curso, un libro o algo que resolviste en tu vida diaria. Descríbelo en una frase.", ["Una tarea de mi trabajo", "Un proyecto que llevé", "Un voluntariado", "Un curso, libro o podcast"]);
+}
+function setBusy(b) { busy = b; $("send").disabled = b; }
+
+async function agentTurn(userText, { closing = false } = {}) {
+  const el = bubble("Pensando…"); el.classList.add("thinking"); setPhase(); setBusy(true);
+  try {
+    if (!aiOk) throw new Error("offline");
+    const r = await api("/api/chat", { titulo: draft.titulo, history: draft.history, closing });
+    const reader = r.body.getReader(), dec = new TextDecoder();
+    let text = "";
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      text += dec.decode(value, { stream: true });
+      el.classList.remove("thinking"); el.textContent = text; $("messages").scrollTop = $("messages").scrollHeight;
+    }
+    text = text.trim();
+    if (!text) throw new Error("empty");
+    el.textContent = text; draft.history.push({ role: "assistant", content: text });
+  } catch (e) {
+    if (e.status === 429 || e.status === 403) aiState(false, e.message);
+    const q = closing ? closingQuestion() : ruleQuestion(userText);
+    el.classList.remove("thinking"); el.textContent = q; draft.history.push({ role: "assistant", content: q });
+  } finally { setBusy(false); $("answer").focus(); }
+}
+const closingQuestion = () => "Para cerrar: en dos o tres frases, ¿qué sabes hacer ahora, qué prueba lo demuestra mejor y qué te falta todavía? Si prefieres seguir profundizando, escribe «seguir».";
+
+async function submit(value) {
+  value = value.trim(); if (!value || busy) return;
+  document.querySelectorAll(".choices").forEach((x) => x.remove());
+  if (stage === "done" && value === "Ver mis evidencias") { show("evidencias"); return; }
+  bubble(value, "user"); $("answer").value = "";
+  if (stage === "start" || stage === "done") {
+    if (/^(empezar|documentar)/.test(normalize(value))) { begin(); return; }
+    begin(value); return;
+  }
+  if (stage === "type") {
+    if (/^(una tarea de mi trabajo|un proyecto que lleve|un voluntariado|un curso, libro o podcast)$/.test(normalize(value))) {
+      draft.fuente = value; stage = "titleAsk"; ask("Perfecto. Descríbelo en una frase: ¿qué era y qué hiciste tú?"); return;
+    }
+    draft.titulo = value; const m = value.match(/https?:\/\/\S+/); if (m) draft.url = m[0];
+    stage = "dialogue"; ask(`Vamos a documentar «${value}». Cuéntame con tus palabras qué aprendiste y en qué situación.`); return;
+  }
+  if (stage === "titleAsk") { draft.titulo = value; stage = "dialogue"; ask("Gracias. ¿Qué aprendiste exactamente y qué hiciste tú, en primera persona?"); return; }
+  if (stage === "dialogue") {
+    draft.turns.push({ text: value }); draft.history.push({ role: "user", content: value });
+    if (draft.turns.length >= MAX_TURNS) { stage = "review"; await agentTurn(value, { closing: true }); return; }
+    await agentTurn(value); return;
+  }
+  if (stage === "review") {
+    draft.history.push({ role: "user", content: value });
+    if (/^(seguir|continuar|profundizar)/.test(normalize(value))) { stage = "dialogue"; draft.turns.push({ text: value }); await agentTurn(value); return; }
+    draft.turns.push({ text: value });
+    await completeInterview(value);
+  }
+}
+
+async function analyzeInterview(synthesis) {
+  const userText = draft.turns.map((t) => t.text).join(" ");
+  const fallback = { titulo: "", evidencias: { sintesis: synthesis }, resultados: ruleLink(userText + " " + draft.titulo), validez: 1, suficiencia: userText.length > 900 ? 2 : 1, contexto: "", horas: 0, fecha: "", verificador_nombre: "", verificador_rol: "", falta: "Añade un producto y la confirmación de alguien que haya visto tu trabajo." };
+  if (!aiOk) return fallback;
+  try {
+    const o = await (await api("/api/analyze", { kind: "interview", titulo: draft.titulo, history: draft.history })).json();
+    const ev = {}; for (const k of ["idea", "aplicacion", "argumentacion", "conexion", "limites"]) if (o.evidencias?.[k]?.trim()) ev[k] = o.evidencias[k].trim();
+    ev.sintesis = synthesis;
+    return { ...o, evidencias: ev };
+  } catch (e) {
+    if (e.status === 429 || e.status === 403) aiState(false, e.message);
+    return fallback;
+  }
+}
+
+async function completeInterview(synthesis) {
+  const el = bubble("Ordenando tus evidencias…"); el.classList.add("thinking"); setBusy(true);
+  const r = await analyzeInterview(synthesis);
+  const e = {
+    id: draft.id, kind: "evidence", tipo: "entrevista", titulo: r.titulo || draft.titulo, fuente: draft.fuente, url: draft.url,
+    fecha: /^\d{4}-\d{2}-\d{2}$/.test(r.fecha) ? r.fecha : today(), createdAt: draft.createdAt,
+    contexto: CONTEXTOS.includes(r.contexto) ? r.contexto : "", horas: num(r.horas), resultados: r.resultados || [], evidencias: r.evidencias,
+    criterios: { validez: clamp03(r.validez), suficiencia: clamp03(r.suficiencia) }, falta: r.falta || "",
+    artefactos: [], verificacion: { nombre: r.verificador_nombre || "", rol: r.verificador_rol || "", contacto: "", estado: "sin solicitar" },
+    dialogue: draft.history.map((m) => ({ role: m.role, text: m.content })), ai: aiOk,
+  };
+  el.classList.remove("thinking");
+  try {
+    await saveEvidence(e);
+    el.textContent = `He registrado «${e.titulo}» como evidencia${e.resultados.length ? " para " + e.resultados.join(", ") : ""}.${e.falta ? "\n\nPara que sea suficiente: " + e.falta : ""}\n\nEn «Mis evidencias» puedes adjuntar el producto, revisar las horas y pedir la confirmación de ${e.verificacion.nombre || "alguien que haya visto tu trabajo"}.`;
+    stage = "done"; draft = null; setPhase(); choices(["Ver mis evidencias", "Documentar otra cosa"]);
+  } catch (err) {
+    el.textContent = err.message + " Escribe tu síntesis otra vez para reintentarlo.";
+    draft.turns.pop(); draft.history.pop();
+  }
+  setBusy(false);
+}
+
+/* ================= Diary ================= */
+$("diaryForm").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const text = $("dText").value.trim(); if (!text) return;
+  const btn = $("dSave"); btn.disabled = true; btn.textContent = "Guardando…"; $("dToast").textContent = "";
+  const id = uid(), f = $("dFile").files?.[0];
+  try {
+    const artefactos = f ? [await uploadFile(f, id)] : [];
+    let link = { titulo: text.split(/[.!?\n]/)[0].slice(0, 70), resultados: ruleLink(text), validez: 1, suficiencia: text.length > 400 ? 2 : 1, falta: "Amplíala con una entrevista para ganar profundidad." };
+    if (aiOk) {
+      try { link = await (await api("/api/analyze", { kind: "diary", texto: text, contexto: $("dCtx").value, horas: num($("dHours").value) })).json(); }
+      catch (e) { if (e.status === 429 || e.status === 403) aiState(false, e.message); }
+    }
+    await saveEvidence({
+      id, kind: "evidence", tipo: "diario", titulo: link.titulo || text.slice(0, 70), fuente: "", url: "", fecha: $("dDate").value || today(), createdAt: Date.now(),
+      contexto: $("dCtx").value, horas: num($("dHours").value), resultados: link.resultados || [], evidencias: { texto: text },
+      criterios: { validez: clamp03(link.validez), suficiencia: clamp03(link.suficiencia) }, falta: link.falta || "",
+      artefactos, verificacion: { nombre: "", rol: "", contacto: "", estado: "sin solicitar" }, dialogue: [], ai: aiOk,
+    });
+    $("dText").value = ""; $("dFile").value = ""; $("dHours").value = "1"; $("dDate").value = today();
+    $("dToast").textContent = `Guardado${link.resultados?.length ? " · vinculado a " + link.resultados.join(", ") : ""}`;
+  } catch (e) {
+    $("dToast").textContent = e.message;
+  } finally { btn.disabled = false; btn.textContent = "Guardar en el diario"; }
+});
+
+/* ================= Objective ================= */
+function fillProfileForm() {
+  $("pUni").value = objetivo.universidad || ""; $("pTit").value = objetivo.titulacion || ""; $("pAsig").value = objetivo.asignatura || ""; $("pEcts").value = objetivo.ects || "";
+  $("pRA").value = objetivo.resultados.map((r) => r.texto).join("\n");
+}
+$("profileForm").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const lines = $("pRA").value.split("\n").map((s) => s.replace(/^\s*(RA\s*\d+|C\d+|[-•*\d.)]+)\s*[:.)-]?\s*/i, "").trim()).filter(Boolean);
+  if (!lines.length) { $("pToast").textContent = "Añade al menos un resultado de aprendizaje."; return; }
+  const prev = new Map(objetivo.resultados.map((r) => [normalize(r.texto), r.id]));
+  const taken = new Set(prev.values()), used = new Set(); let next = 1;
+  const resultados = lines.map((t) => {
+    let id = prev.get(normalize(t));
+    if (!id || used.has(id)) { while (taken.has("RA" + next) || used.has("RA" + next)) next++; id = "RA" + next; }
+    used.add(id); return { id, texto: t };
+  });
+  const generico = resultados.every((r) => GENERIC_RA.some((g) => g.id === r.id && g.texto === r.texto)) && !$("pTit").value.trim() && !$("pAsig").value.trim();
+  const obj = { universidad: $("pUni").value.trim(), titulacion: $("pTit").value.trim(), asignatura: $("pAsig").value.trim(), ects: $("pEcts").value, resultados, generico };
+  try {
+    await updatePerfil({ objetivo: obj });
+    objetivo = obj; fillProfileForm(); render();
+    $("pToast").textContent = "Objetivo guardado. Las próximas entrevistas se orientarán a estos resultados.";
+  } catch { $("pToast").textContent = "No se pudo guardar. Inténtalo de nuevo."; }
+});
+$("pGeneric").onclick = () => { $("pRA").value = GENERIC_RA.map((r) => r.texto).join("\n"); $("pToast").textContent = "Pulsa «Guardar objetivo» para aplicarlo."; };
+$("pExtract").onclick = async () => {
+  const g = $("pGuide").value.trim(), msg = $("pExtractMsg");
+  if (!g) { msg.textContent = "Pega primero el texto de la guía docente."; return; }
+  $("pExtract").disabled = true; msg.textContent = "Extrayendo…";
+  try {
+    const { resultados } = await (await api("/api/analyze", { kind: "extract", guia: g })).json();
+    if (resultados.length) { $("pRA").value = resultados.join("\n"); msg.textContent = `${resultados.length} resultados extraídos. Revísalos y pulsa «Guardar objetivo».`; }
+    else msg.textContent = "No encontré resultados en ese texto. Prueba con el apartado de competencias.";
+  } catch (e) { msg.textContent = e.message || "No se pudo extraer. Cópialos a mano, uno por línea."; }
+  finally { $("pExtract").disabled = false; }
+};
+
+/* ================= Views ================= */
+const TITLES = { agente: ["Plataforma de evidencias de aprendizaje", "¿Qué has aprendido hoy?"], evidencias: ["Evidencias", "Cada aprendizaje, con sus pruebas."], objetivo: ["Objetivo", "¿Dónde quieres que cuente?"], expediente: ["Expediente", "Lo que podrás presentar a la universidad."], coordinacion: ["Coordinación", "Seguimiento del piloto."], cuenta: ["Cuenta", "Tus datos, bajo tu control."] };
+function show(id) {
+  document.querySelectorAll(".view").forEach((v) => v.classList.toggle("on", v.id === id));
+  document.querySelectorAll("[data-view]").forEach((b) => b.classList.toggle("on", b.dataset.view === id));
+  $("eyebrow").textContent = TITLES[id][0]; $("pagetitle").textContent = TITLES[id][1];
+  if (id === "objetivo") fillProfileForm();
+  if (id === "cuenta") { $("aName").value = perfil.nombre || ""; $("aShare").checked = !!perfil.compartir_con_coordinacion; }
+  if (id === "coordinacion") loadPeople();
+  render(); window.scrollTo(0, 0);
+}
+document.querySelectorAll("[data-view]").forEach((x) => (x.onclick = () => show(x.dataset.view)));
+document.querySelectorAll("[data-goto]").forEach((x) => (x.onclick = () => show(x.dataset.goto)));
+document.querySelectorAll("[data-go-chat]").forEach((x) => (x.onclick = () => { show("agente"); if (!busy) { bubble("Quiero documentar algo nuevo.", "user"); begin(); } }));
+
+let entered = false;
+function enterApp() {
+  showScreen("app");
+  $("whoName").textContent = perfil.nombre || session.user.email;
+  $("avatar").textContent = (perfil.nombre || session.user.email).split(/\s+/).map((w) => w[0]).slice(0, 2).join("").toUpperCase();
+  $("navCoord").hidden = perfil.role !== "coordinador";
+  $("dDate").value = today();
+  render();
+  if (!entered) {
+    entered = true;
+    bubble(`Hola${perfil.nombre ? ", " + perfil.nombre.split(" ")[0] : ""}. Te ayudo a convertir lo que aprendes cada día en evidencias que una universidad pueda reconocer.\n\nCuéntame algo que hayas hecho o aprendido y te haré preguntas hasta tener lo que pide un expediente: qué sabes hacer, un caso real, horas, un producto que lo pruebe y alguien que pueda confirmarlo.\n\nSi ya sabes en qué asignatura quieres el reconocimiento, defínela antes en «Objetivo de acreditación».`);
+    choices(["Empezar a documentar"]);
+  }
+}
+
+/* ================= Render ================= */
+function dots(v) { return `<span class="dots${v === 3 ? " full" : ""}">${[1, 2, 3].map((i) => `<i class="${i <= v ? "on" : ""}"></i>`).join("")}</span>`; }
+function render() {
+  if (!perfil) return;
+  const sts = objetivo.resultados.map((r) => ({ r, s: outcomeStatus(r, evidences) }));
+  const ready = sts.filter((x) => x.s.n === 5).length, h = totalHours(evidences), [e1, e2] = ectsRange(h);
+  $("targetLine").textContent = "Objetivo: " + targetName(objetivo);
+  $("kReady").textContent = `${ready}/${sts.length}`; $("kHours").textContent = fmtN(h); $("kEcts").textContent = h ? fmtN(e1) + "–" + fmtN(e2) : "0";
+  $("raMini").innerHTML = sts.map(({ r, s }) => `<div title="${safe(r.texto)}"><b>${safe(r.id)}</b><span class="track"><span class="fill${s.n === 5 ? " ok" : ""}" style="display:block;width:${s.n * 20}%"></span></span><span class="subtle">${s.n}/5</span></div>`).join("");
+  renderEvidenceList($("evidenceList"), evidences, objetivo, true);
+  $("dossierTitle").textContent = objetivo.generico ? "Expediente de reconocimiento" : "Expediente · " + (objetivo.asignatura || objetivo.titulacion);
+  $("dossierKpis").innerHTML = kpisHtml(objetivo, evidences);
+  $("dossierMatrix").innerHTML = matrixHtml(objetivo, evidences);
+}
+function kpisHtml(obj, evs) {
+  const sts = obj.resultados.map((r) => outcomeStatus(r, evs)), ready = sts.filter((s) => s.n === 5).length, h = totalHours(evs), [e1, e2] = ectsRange(h);
+  const verified = evs.filter((e) => e.verificacion?.estado === "confirmada").length, withArt = evs.filter((e) => (e.artefactos || []).length).length;
+  return [
+    [`${ready}/${sts.length}`, "Resultados listos para presentar"], [evs.length, "Evidencias registradas"], [fmtN(h) + " h", "Horas documentadas"],
+    [h ? `${fmtN(e1)}–${fmtN(e2)}` : "0", `ECTS equivalentes${obj.ects ? " de " + obj.ects : ""} (25–30 h por crédito)`], [`${verified} · ${withArt}`, "Confirmadas por tercero · con producto"],
+  ].map(([v, l]) => `<div class="stat"><strong>${safe(v)}</strong><small>${safe(l)}</small></div>`).join("");
+}
+function matrixHtml(obj, evs) {
+  const ck = (b) => (b ? '<span class="yes">✓</span>' : '<span class="no">—</span>');
+  return `<table><thead><tr><th>Resultado de aprendizaje</th><th>Evidencias</th><th>≥2</th><th>Producto</th><th>Tercero</th><th>Profundidad</th><th>Vigente</th><th>Horas</th><th>Estado</th></tr></thead><tbody>${obj.resultados.map((r) => { const s = outcomeStatus(r, evs); return `<tr><td><b>${safe(r.id)}</b> ${safe(r.texto)}</td><td class="c">${s.linked.length}</td><td class="c">${ck(s.checks.cantidad)}</td><td class="c">${ck(s.checks.producto)}</td><td class="c">${ck(s.checks.tercero)}</td><td class="c">${ck(s.checks.profundidad)}</td><td class="c">${ck(s.checks.vigente)}</td><td class="c">${fmtN(s.horas)}</td><td><span class="pill ${s.cls}">${s.label}</span></td></tr>`; }).join("")}</tbody></table>`;
+}
+function renderEvidenceList(container, evs, obj, editable) {
+  const open = new Set([...container.querySelectorAll("details[open]")].map((d) => d.dataset.id));
+  const rev = [...evs].reverse();
+  if (!rev.length) { container.innerHTML = `<div class="empty">${editable ? "Aún no hay evidencias. Haz una entrevista o escribe en el diario rápido y aparecerán aquí con su valoración." : "Esta persona aún no tiene evidencias."}</div>`; return; }
+  container.innerHTML = rev.map((e) => {
+    const s = scoresOf(e), v = e.verificacion || {};
+    const vPill = v.estado === "confirmada" ? '<span class="pill ok">Confirmada por tercero</span>' : v.estado === "solicitada" ? '<span class="pill warn">Confirmación solicitada</span>' : '<span class="pill">Sin confirmar</span>';
+    const raTags = (e.resultados || []).map((id) => { const r = obj.resultados.find((x) => x.id === id); return `<span class="pill ra" title="${safe(r?.texto || "Este resultado ya no está en el objetivo")}">${safe(id)}</span>`; }).join("") || '<span class="pill">Sin resultado vinculado</span>';
+    const texts = Object.entries(e.evidencias || {}).map(([k, t]) => `<p><strong>${safe(EV_LABELS[k] || k)}:</strong> ${safe(t)}</p>`).join("");
+    const arts = (e.artefactos || []).map((a) => `<button class="pill" data-act="open" data-path="${safe(a.path)}">📎 ${safe(a.name)}</button>`).join("");
+    const verif = !editable && v.nombre ? `<p><strong>Confirmación:</strong> ${safe(v.nombre)}${v.rol ? " (" + safe(v.rol) + ")" : ""}${v.contacto ? " · " + safe(v.contacto) : ""} · ${safe(v.estado)}</p>` : "";
+    const id = safe(e.id);
+    return `<article class="card">
+      <div class="card-head"><div style="min-width:0"><b>${safe(e.titulo)}</b><small>${e.tipo === "diario" ? "Diario" : "Entrevista"} · ${safe(fmtDate(e.fecha))}${e.contexto ? " · " + safe(e.contexto) : ""}${e.horas ? " · " + fmtN(num(e.horas)) + " h" : ""}</small></div>${vPill}</div>
+      <div class="chips">${raTags}${arts}</div>
+      <div class="vasc">${CRIT.map(([k, l]) => `<div>${l} ${s[k]}/3${dots(s[k])}</div>`).join("")}</div>
+      ${e.falta ? `<div class="falta">Le falta: ${safe(e.falta)}</div>` : ""}
+      <details class="more" data-id="${id}"${open.has(e.id) ? " open" : ""}>
+        <summary>${editable ? "Contenido, pruebas y confirmación" : "Contenido"}</summary>
+        ${texts}${verif}
+        ${editable ? `
+        <div class="edit-grid">
+          <label class="field">Título<input id="t-${id}" value="${safe(e.titulo)}"></label>
+          <label class="field">Fecha<input type="date" id="f-${id}" value="${safe(e.fecha)}"></label>
+          <label class="field">Horas dedicadas<input type="number" min="0" step="0.5" id="h-${id}" value="${safe(e.horas || 0)}"></label>
+          <label class="field">Contexto<select id="c-${id}">${["", ...CONTEXTOS].map((o) => `<option${o === e.contexto ? " selected" : ""}>${o}</option>`).join("")}</select></label>
+        </div>
+        <div class="field" style="margin-top:10px">Resultados de aprendizaje vinculados
+          <div class="chips">${obj.resultados.map((r) => `<label class="pill ra" title="${safe(r.texto)}"><input type="checkbox" data-ra="${safe(r.id)}" data-ev="${id}"${(e.resultados || []).includes(r.id) ? " checked" : ""}> ${safe(r.id)}</label>`).join("")}</div>
+        </div>
+        <div class="edit-grid">
+          <label class="field">Quién puede confirmarlo<input id="vn-${id}" value="${safe(v.nombre)}" placeholder="Nombre y apellidos"></label>
+          <label class="field">Rol o relación<input id="vr-${id}" value="${safe(v.rol)}" placeholder="Ej.: responsable de equipo"></label>
+          <label class="field">Contacto<input id="vc-${id}" value="${safe(v.contacto)}" placeholder="Correo o teléfono"></label>
+          <label class="field">Estado de la confirmación<select id="vs-${id}">${["sin solicitar", "solicitada", "confirmada"].map((o) => `<option${o === v.estado ? " selected" : ""}>${o}</option>`).join("")}</select></label>
+        </div>
+        <div class="row-actions">
+          <button class="btn small accent" data-act="save" data-id="${id}">Guardar cambios</button>
+          <button class="btn small" data-act="copy" data-id="${id}">Copiar solicitud de confirmación</button>
+          <label class="btn small" for="up-${id}">📎 Adjuntar producto o carta</label>
+          <input type="file" id="up-${id}" data-act="upload" data-id="${id}" style="position:absolute;width:1px;height:1px;opacity:0">
+          <button class="btn small danger" data-act="del" data-id="${id}">Eliminar</button>
+          <span class="toast" id="msg-${id}"></span>
+        </div>
+        <textarea class="copybox field" id="cb-${id}" hidden readonly></textarea>` : ""}
+      </details>
+    </article>`;
+  }).join("");
+}
+function verificationText(e) {
+  const v = e.verificacion || {}, ras = (e.resultados || []).map((id) => objetivo.resultados.find((r) => r.id === id)?.texto).filter(Boolean);
+  return `Hola${v.nombre ? " " + v.nombre : ""}:
+
+Estoy preparando un expediente para solicitar el reconocimiento académico de aprendizajes adquiridos por experiencia${objetivo.titulacion ? " en " + objetivo.titulacion : ""}${objetivo.universidad ? " (" + objetivo.universidad + ")" : ""}.
+
+¿Podrías confirmar, por escrito y con tu nombre, cargo y fecha, que realicé esta actividad?
+
+· Actividad: ${e.titulo}
+· Fecha aproximada: ${fmtDate(e.fecha)}${e.horas ? "\n· Dedicación aproximada: " + fmtN(num(e.horas)) + " horas" : ""}${e.contexto ? "\n· Contexto: " + e.contexto : ""}${ras.length ? "\n· Lo que demuestra: " + ras.join(" / ") : ""}
+
+Basta con que respondas a este mensaje indicando si es correcto y, si quieres, añadas tu valoración. Muchas gracias.
+
+${perfil.nombre || ""}`;
+}
+document.addEventListener("click", (ev) => {
+  const b = ev.target.closest('[data-act="open"]');
+  if (b) openFile(b.dataset.path);
+});
+$("evidenceList").addEventListener("click", async (ev) => {
+  const b = ev.target.closest("button[data-act]"); if (!b || b.dataset.act === "open") return;
+  const e = evidences.find((x) => x.id === b.dataset.id); if (!e) return;
+  const msg = () => $("msg-" + e.id), say = (t) => { const m = msg(); if (m) m.textContent = t; };
+  if (b.dataset.act === "save") {
+    const n = structuredClone(e);
+    n.titulo = $("t-" + e.id).value.trim() || e.titulo; n.fecha = $("f-" + e.id).value || e.fecha; n.horas = num($("h-" + e.id).value); n.contexto = $("c-" + e.id).value;
+    n.resultados = [...document.querySelectorAll(`input[data-ev="${e.id}"]`)].filter((c) => c.checked).map((c) => c.dataset.ra);
+    n.verificacion = { nombre: $("vn-" + e.id).value.trim(), rol: $("vr-" + e.id).value.trim(), contacto: $("vc-" + e.id).value.trim(), estado: $("vs-" + e.id).value };
+    try { await saveEvidence(n); say("Guardado"); } catch (err) { say(err.message); }
+  }
+  if (b.dataset.act === "copy") {
+    const t = verificationText(e);
+    navigator.clipboard.writeText(t).then(() => say("Copiada. Envíala por correo y adjunta la respuesta como prueba.")).catch(() => { const cb = $("cb-" + e.id); cb.hidden = false; cb.value = t; cb.select(); say("Selecciona el texto y cópialo."); });
+  }
+  if (b.dataset.act === "del") {
+    if (b.dataset.armed) { try { await deleteEvidence(e); } catch (err) { say(err.message); } return; }
+    b.dataset.armed = "1"; b.textContent = "Pulsa otra vez para eliminar";
+    setTimeout(() => { if (b.isConnected) { delete b.dataset.armed; b.textContent = "Eliminar"; } }, 4000);
+  }
+});
+$("evidenceList").addEventListener("change", async (ev) => {
+  const inp = ev.target.closest('input[data-act="upload"]'); if (!inp) return;
+  const f = inp.files?.[0], e = evidences.find((x) => x.id === inp.dataset.id); if (!f || !e) return;
+  const say = (t) => { const m = $("msg-" + e.id); if (m) m.textContent = t; };
+  say("Subiendo…");
+  try {
+    const a = await uploadFile(f, e.id), n = structuredClone(e);
+    n.artefactos = [...(n.artefactos || []), a];
+    await saveEvidence(n); say("Prueba adjuntada");
+  } catch (err) { say(err.message); }
+});
+
+/* ================= Coordination ================= */
+let people = [], selected = null;
+async function loadPeople() {
+  const { data, error } = await sb.from("perfiles").select("user_id,nombre,objetivo,compartir_con_coordinacion").neq("user_id", session.user.id).eq("compartir_con_coordinacion", true).order("nombre");
+  if (error) { $("people").innerHTML = '<div class="empty">No se pudo cargar la lista.</div>'; return; }
+  people = data;
+  $("people").innerHTML = people.length ? people.map((p) => `<button class="person${selected?.user_id === p.user_id ? " on" : ""}" data-person="${safe(p.user_id)}"><span><b>${safe(p.nombre || "Sin nombre")}</b><br><small class="subtle">${safe(targetName(p.objetivo?.resultados?.length ? p.objetivo : GENERIC_OBJ))}</small></span><span>→</span></button>`).join("") : '<div class="empty">Todavía nadie ha compartido su expediente.</div>';
+}
+$("people").addEventListener("click", async (ev) => {
+  const b = ev.target.closest("[data-person]"); if (!b) return;
+  const p = people.find((x) => x.user_id === b.dataset.person); if (!p) return;
+  const { data, error } = await sb.from("evidencias").select("data,created_at").eq("user_id", p.user_id).order("created_at");
+  if (error) return;
+  selected = { ...p, obj: p.objetivo?.resultados?.length ? p.objetivo : GENERIC_OBJ, evs: data.map((r) => r.data) };
+  document.querySelectorAll(".person").forEach((x) => x.classList.toggle("on", x === b));
+  $("coordDetail").hidden = false;
+  $("coordName").textContent = p.nombre || "Sin nombre";
+  $("coordTarget").textContent = "Objetivo: " + targetName(selected.obj);
+  $("coordKpis").innerHTML = kpisHtml(selected.obj, selected.evs);
+  $("coordMatrix").innerHTML = matrixHtml(selected.obj, selected.evs);
+  renderEvidenceList($("coordEvidences"), selected.evs, selected.obj, false);
+  $("coordDetail").scrollIntoView({ behavior: "smooth" });
+});
+$("coordExport").onclick = () => selected && download(`lumen-expediente-${normalize(selected.nombre || "participante").replace(/\W+/g, "-")}.html`, dossierHtml(selected.obj, selected.evs, selected.nombre), "text/html");
+
+/* ================= Account ================= */
+$("accountForm").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  try { await updatePerfil({ nombre: $("aName").value.trim(), compartir_con_coordinacion: $("aShare").checked }); $("aToast").textContent = "Guardado"; enterApp(); }
+  catch { $("aToast").textContent = "No se pudo guardar."; }
+});
+$("logout").onclick = async () => { await sb.auth.signOut(); location.reload(); };
+$("deleteAccount").onclick = async () => {
+  const b = $("deleteAccount");
+  if (!b.dataset.armed) {
+    b.dataset.armed = "1"; b.textContent = "Pulsa otra vez: se borrará todo y no se puede deshacer";
+    setTimeout(() => { delete b.dataset.armed; b.textContent = "Eliminar mi cuenta"; }, 6000); return;
+  }
+  b.disabled = true; $("accMsg").textContent = "Eliminando…";
+  const { data } = await sb.auth.getSession();
+  const r = await fetch("/api/account", { method: "DELETE", headers: { Authorization: "Bearer " + (data.session?.access_token || "") } });
+  if (r.status === 204) { await sb.auth.signOut(); location.reload(); return; }
+  b.disabled = false; $("accMsg").textContent = "No se pudo eliminar la cuenta. Inténtalo de nuevo.";
+};
+
+/* ================= Export ================= */
+function download(filename, content, type) {
+  const url = URL.createObjectURL(new Blob([content], { type: type + ";charset=utf-8" }));
+  const a = document.createElement("a"); a.href = url; a.download = filename; document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+function dossierHtml(obj, evs, nombre) {
+  const sorted = [...evs].sort(byDate), h = totalHours(evs), [e1, e2] = ectsRange(h);
+  const label = (e) => "E" + (sorted.indexOf(e) + 1);
+  const evHtml = sorted.map((e) => {
+    const s = scoresOf(e), v = e.verificacion || {};
+    return `<section class="ev"><h3>${label(e)}. ${safe(e.titulo)}</h3>
+<p class="meta">${safe(fmtDate(e.fecha))} · ${safe(e.contexto || "Contexto sin indicar")} · ${fmtN(num(e.horas))} h · ${e.tipo === "diario" ? "Registro de diario" : "Entrevista reflexiva"}</p>
+<p><b>Resultados de aprendizaje:</b> ${(e.resultados || []).map(safe).join(", ") || "—"}</p>
+${Object.entries(e.evidencias || {}).map(([k, t]) => `<p><b>${safe(EV_LABELS[k] || k)}:</b> ${safe(t)}</p>`).join("")}
+<p><b>Valoración preliminar:</b> validez ${s.validez}/3 · autenticidad ${s.autenticidad}/3 · suficiencia ${s.suficiencia}/3 · vigencia ${s.vigencia}/3</p>
+<p><b>Pruebas adjuntas:</b> ${(e.artefactos || []).map((a) => safe(a.name)).join(", ") || "Ninguna"}</p>
+<p><b>Confirmación de tercero:</b> ${v.nombre ? safe(v.nombre) + (v.rol ? " (" + safe(v.rol) + ")" : "") + (v.contacto ? " · " + safe(v.contacto) : "") + " · " + safe(v.estado) : "No indicada"}</p></section>`;
+  }).join("");
+  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Expediente de reconocimiento · ${safe(nombre || "")}</title><style>
+body{font:15px/1.55 Georgia,serif;color:#1b2438;max-width:860px;margin:40px auto;padding:0 20px}h1,h2,h3{font-family:Helvetica,Arial,sans-serif}h1{margin-bottom:4px}
+table{width:100%;border-collapse:collapse;font-size:13px;margin:12px 0}th,td{border:1px solid #ccd3df;padding:6px 8px;text-align:left;vertical-align:top}th{background:#eef2f8}
+.meta{color:#66718a;margin-top:-6px}.ev{border-top:1px solid #ccd3df;padding-top:8px;margin-top:18px}.note{background:#eef2f8;padding:12px;font-size:13px}.firma{margin-top:40px}
+@media print{body{margin:0}.ev{break-inside:avoid}}
+</style></head><body>
+<h1>Expediente de reconocimiento de aprendizajes por experiencia</h1>
+<p class="meta">Generado con Lumen el ${new Date().toLocaleDateString("es-ES")}</p>
+<h2>1. Solicitud</h2>
+<table><tr><th>Solicitante</th><td>${safe(nombre || "—")}</td></tr><tr><th>Universidad</th><td>${safe(obj.universidad || "—")}</td></tr><tr><th>Titulación</th><td>${safe(obj.titulacion || "—")}</td></tr><tr><th>Asignatura o módulo</th><td>${safe(obj.asignatura || "—")}${obj.ects ? " (" + safe(obj.ects) + " ECTS)" : ""}</td></tr>
+<tr><th>Horas documentadas</th><td>${fmtN(h)} h (equivalencia orientativa: ${fmtN(e1)}–${fmtN(e2)} ECTS, a 25–30 h por crédito)</td></tr></table>
+<h2>2. Correspondencia con los resultados de aprendizaje</h2>
+<table><tr><th>Resultado</th><th>Evidencias</th><th>Horas</th><th>Producto</th><th>Tercero</th><th>Estado</th></tr>
+${obj.resultados.map((r) => { const s = outcomeStatus(r, evs); return `<tr><td><b>${safe(r.id)}</b> ${safe(r.texto)}</td><td>${s.linked.map(label).join(", ") || "—"}</td><td>${fmtN(s.horas)}</td><td>${s.checks.producto ? "Sí" : "No"}</td><td>${s.checks.tercero ? "Sí" : "No"}</td><td>${s.label}</td></tr>`; }).join("")}</table>
+<h2>3. Evidencias</h2>${evHtml || "<p>Sin evidencias registradas.</p>"}
+<h2>4. Declaración</h2>
+<p>Declaro que las actividades y aprendizajes descritos en este expediente son ciertos y han sido realizados por mí, y que las pruebas aportadas son auténticas.</p>
+<p class="firma">Firma: ______________________ &nbsp;&nbsp; Fecha: ______________</p>
+<p class="note">La valoración de este documento es preliminar y autoinformada. Las puntuaciones de validez y suficiencia son estimaciones automáticas para orientar a la persona solicitante. Los archivos de prueba están disponibles en la plataforma Lumen. El reconocimiento de créditos corresponde exclusivamente a la universidad, conforme a su normativa.</p>
+</body></html>`;
+}
+$("exportHtml").onclick = () => download("lumen-expediente.html", dossierHtml(objetivo, evidences, perfil.nombre), "text/html");
+$("exportJson").onclick = () => download("lumen-mis-datos.json", JSON.stringify({ plataforma: "Lumen", exportado: new Date().toISOString(), aviso: "Declaraciones autoinformadas, pendientes de evaluación por la universidad", perfil: { nombre: perfil.nombre, consentimiento_at: perfil.consentimiento_at, compartir_con_coordinacion: perfil.compartir_con_coordinacion, objetivo }, evidencias: evidences }, null, 2), "application/json");
+
+/* ================= Auth screens ================= */
+$("loginForm").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const email = $("loginEmail").value.trim(); $("loginError").textContent = ""; $("loginBtn").disabled = true;
+  const { error } = await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: location.origin } });
+  $("loginBtn").disabled = false;
+  if (error) {
+    $("loginError").textContent = /signups not allowed|not found/i.test(error.message) ? "Este correo no está dado de alta en el piloto. Escribe a la coordinación para que te inviten." : error.status === 429 ? "Has pedido varios enlaces seguidos. Espera un minuto e inténtalo de nuevo." : "No se pudo enviar el enlace. Revisa el correo e inténtalo de nuevo.";
+    return;
+  }
+  $("sentTo").textContent = email; showScreen("sent");
+});
+$("sentBack").onclick = () => showScreen("login");
+$("consentForm").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  if (!$("cAccept").checked) { $("consentError").textContent = "Para participar tienes que aceptar la información sobre protección de datos."; return; }
+  try {
+    await updatePerfil({ nombre: $("cName").value.trim(), consentimiento_at: new Date().toISOString(), consentimiento_version: CONSENT_VERSION, compartir_con_coordinacion: $("cShare").checked });
+    route();
+  } catch { $("consentError").textContent = "No se pudo guardar. Inténtalo de nuevo."; }
+});
+
+/* ================= Composer ================= */
+function respond() { const v = $("answer").value; if (v.trim()) submit(v); }
+$("send").onclick = respond;
+$("answer").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); respond(); } });
+
+boot();
+
+</script>
+<script>
+// Demo-only replacements for browser features the claude.ai viewer blocks.
+(function () {
+  const use = (n) => (window.claude?.use ? window.claude.use(n) : Promise.resolve(null));
+  window.download = async function (filename, content) {
+    const dl = await use("downloads");
+    if (!dl) return;
+    try { await dl.save({ filename, data: content }); } catch {}
+  };
+  window.openFile = async function () {
+    const t = document.querySelector(".toast:not(:empty)") || document.getElementById("dToast");
+    if (t) t.textContent = "En la demo los archivos se guardan solo durante la sesión y no se pueden abrir.";
+  };
+  const banner = document.createElement("div");
+  banner.className = "demo-banner";
+  banner.innerHTML = 'Demo de Lumen · los datos se guardan solo en este navegador · <button type="button">Reiniciar demo</button>';
+  banner.querySelector("button").onclick = () => window.__lumenDemoReset();
+  document.body.prepend(banner);
+})();
+
+</script>
