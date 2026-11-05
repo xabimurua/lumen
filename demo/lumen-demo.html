@@ -269,6 +269,8 @@ a{color:var(--accent)}
     <label class="field">Tu nombre (aparecerá en tu expediente)<input id="cName" required autocomplete="name"></label>
     <label class="check"><input type="checkbox" id="cAccept" required> He leído la información sobre protección de datos y acepto participar en el piloto.</label>
     <label class="check"><input type="checkbox" id="cShare"> Autorizo a la coordinación del piloto a ver mis evidencias y mi expediente (opcional).</label>
+    <label class="check"><input type="checkbox" id="cTray"> Busca en internet mi trayectoria pública (trabajos, proyectos, publicaciones, premios…) y cárgala en mis evidencias (opcional). Lo que no sea mío lo podré quitar.</label>
+    <label class="field" id="cPistasBox" hidden>Pistas para no confundirme con otras personas (opcional)<input id="cPistas" placeholder="Ej.: Bilbao, Osoigo, participación ciudadana"></label>
     <button class="btn primary" type="submit">Empezar</button>
     <p class="error" id="consentError" aria-live="polite"></p>
   </form>
@@ -1104,6 +1106,7 @@ async function submit(value) {
   document.querySelectorAll(".choices").forEach((x) => x.remove());
   if (stage === "done" && value === "Ver mis evidencias") { show("evidencias"); return; }
   if (value === "Ver propuestas de acreditación") { show("objetivo"); $("propSection").scrollIntoView(); return; }
+  if (value === "Ver mi trayectoria") { document.querySelectorAll(".choices").forEach((x) => x.remove()); show("evidencias"); $("trayectoria").scrollIntoView(); return; }
   if (value === "Buscar mi trayectoria en internet") { document.querySelectorAll(".choices").forEach((x) => x.remove()); show("evidencias"); $("trayectoria").scrollIntoView(); $("tPistas").focus(); return; }
   bubble(value, "user"); $("answer").value = "";
   if (stage === "start" || stage === "done") {
@@ -1412,6 +1415,7 @@ function enterApp() {
   $("avatar").textContent = (perfil.nombre || session.user.email).split(/\s+/).map((w) => w[0]).slice(0, 2).join("").toUpperCase();
   $("navCoord").hidden = perfil.role !== "coordinador";
   $("chatDrive").hidden = !googleCfg;
+  if (pendingTrace) { const p = pendingTrace; pendingTrace = null; setTimeout(() => autoTraceOnSignup(p), 0); }
   $("dDate").value = today();
   render();
   if (!entered) {
@@ -1785,11 +1789,14 @@ $("loginForm").addEventListener("submit", async (ev) => {
   $("sentTo").textContent = email; showScreen("sent");
 });
 $("sentBack").onclick = () => showScreen("login");
+let pendingTrace = null;
+$("cTray").addEventListener("change", () => { $("cPistasBox").hidden = !$("cTray").checked; });
 $("consentForm").addEventListener("submit", async (ev) => {
   ev.preventDefault();
   if (!$("cAccept").checked) { $("consentError").textContent = "Para participar tienes que aceptar la información sobre protección de datos."; return; }
   try {
     await updatePerfil({ nombre: $("cName").value.trim(), consentimiento_at: new Date().toISOString(), consentimiento_version: CONSENT_VERSION, compartir_con_coordinacion: $("cShare").checked });
+    if ($("cTray").checked) pendingTrace = { nombre: $("cName").value.trim(), pistas: $("cPistas").value.trim() };
     route();
   } catch { $("consentError").textContent = "No se pudo guardar. Inténtalo de nuevo."; }
 });
@@ -1798,6 +1805,45 @@ $("consentForm").addEventListener("submit", async (ev) => {
 const tray = () => perfil?.trayectoria || {};
 const CONTEXTO_DE = { Trabajo: "Trabajo", Emprendimiento: "Trabajo", Proyecto: "Trabajo", "Charla o evento": "Trabajo", Voluntariado: "Voluntariado", "Formación": "Formación no reglada" };
 const fechaDe = (x) => { const f = x.fecha_fin || x.fecha_inicio || ""; return /^\d{4}-\d{2}$/.test(f) ? f + "-15" : /^\d{4}$/.test(f) ? f + "-06-30" : today(); };
+function evidenceFromTray(x) {
+  return {
+    id: uid(), kind: "evidence", tipo: "trayectoria", titulo: x.titulo, fuente: x.tipo, url: x.fuentes[0]?.url || "", fecha: fechaDe(x), createdAt: Date.now(),
+    contexto: CONTEXTO_DE[x.tipo] || "", horas: 0, resultados: [], evidencias: { texto: [x.rol && `Papel: ${x.rol}.`, x.organizacion && `Organización: ${x.organizacion}.`, x.descripcion].filter(Boolean).join(" ") },
+    criterios: { validez: 1, suficiencia: 1 }, falta: "Haz una entrevista sobre esta experiencia para explicar qué aprendiste, cómo lo aplicaste y cuántas horas le dedicaste.",
+    artefactos: x.fuentes.map((f) => ({ name: f.titulo.slice(0, 120), url: f.url, origen: "internet", subidoEl: new Date().toISOString() })),
+    verificacion: { nombre: "", rol: "", contacto: "", estado: "sin solicitar" }, dialogue: [], ai: true,
+  };
+}
+/** Runs the track-record search; high-confidence items are loaded as evidence straight away, the rest wait for review. */
+async function traceAndLoad({ nombre, pistas = "", enlaces = [] }) {
+  const r = await (await api("/api/trayectoria", { nombre, pistas, enlaces, acepto: true })).json();
+  let t = r.trayectoria, cargadas = 0;
+  for (const x of t.items.filter((i) => i.estado === "pendiente" && i.confianza === "alta")) {
+    const e = evidenceFromTray(x);
+    await saveEvidence(e);
+    t = { ...t, items: t.items.map((i) => (i.id === x.id ? { ...i, estado: "confirmada", auto: true, evidencia_id: e.id } : i)) };
+    cargadas++;
+  }
+  await updatePerfil({ trayectoria: t });
+  renderTrayectoria();
+  if (cargadas) maybeAutoPropose();
+  return { cargadas, porRevisar: t.items.filter((i) => i.estado === "pendiente").length };
+}
+async function autoTraceOnSignup(p) {
+  if (p.nombre.split(/\s+/).length < 2) { bubble("Para buscar tu trayectoria necesito tu nombre y al menos un apellido. Puedes lanzarla cuando quieras desde «Mis evidencias»."); return; }
+  const el = bubble(`Estoy buscando tu trayectoria pública en internet («${p.nombre}»). Tardo uno o dos minutos; mientras tanto puedes seguir.`); el.classList.add("thinking");
+  try {
+    const { cargadas, porRevisar } = await traceAndLoad(p);
+    el.classList.remove("thinking");
+    el.textContent = cargadas || porRevisar
+      ? `He terminado de buscar tu trayectoria. He cargado ${cargadas} experiencia${cargadas === 1 ? "" : "s"} en tus evidencias${porRevisar ? ` y hay ${porRevisar} más que no tengo claro que sean tuyas: revísalas` : ""}. Si algo no es tuyo, quítalo con «No soy yo».`
+      : "He buscado tu trayectoria pero no he encontrado nada fiable. Puedes volver a intentarlo con pistas o con tus enlaces desde «Mis evidencias».";
+    choices(["Ver mi trayectoria", "Empezar a documentar"]);
+  } catch (e) {
+    el.classList.remove("thinking");
+    el.textContent = `No he podido buscar tu trayectoria: ${e.message} Puedes intentarlo desde «Mis evidencias».`;
+  }
+}
 function renderTrayectoria() {
   const t = tray();
   if (!$("tNombre").value) $("tNombre").value = t.nombre || perfil.nombre || "";
@@ -1808,13 +1854,13 @@ function renderTrayectoria() {
   const conf_cls = { alta: "ok", media: "warn", baja: "" };
   const card = (x) => `<article class="card">
       <div class="card-head"><div style="min-width:0"><b>${safe(x.titulo)}</b><small>${safe(x.tipo)}${x.organizacion ? " · " + safe(x.organizacion) : ""}${x.rol ? " · " + safe(x.rol) : ""}${x.fecha_inicio || x.fecha_fin ? " · " + safe([x.fecha_inicio, x.fecha_fin].filter(Boolean).join("–")) : ""}</small></div>
-        ${x.estado === "confirmada" ? '<span class="pill ok">Evidencia creada</span>' : `<span class="pill ${conf_cls[x.confianza] || ""}" title="${safe(x.motivo_confianza)}">Confianza ${safe(x.confianza)}</span>`}</div>
+        ${x.estado === "confirmada" ? `<span class="pill ok">${x.auto ? "Cargada automáticamente" : "Evidencia creada"}</span>` : `<span class="pill ${conf_cls[x.confianza] || ""}" title="${safe(x.motivo_confianza)}">Confianza ${safe(x.confianza)}</span>`}</div>
       <p>${safe(x.descripcion)}</p>
       ${x.estado === "pendiente" ? `<p class="subtle">${safe(x.motivo_confianza)}</p>` : ""}
       <div class="sources">${x.fuentes.map((f) => { let h = f.url; try { h = new URL(f.url).hostname.replace(/^www\./, ""); } catch {} return `<a href="${safe(f.url)}" target="_blank" rel="noopener">${safe(f.titulo.slice(0, 90))} · ${safe(h)}</a>`; }).join("")}</div>
       <div class="row-actions">${x.estado === "pendiente"
         ? `<button class="btn small accent" data-tray="si" data-id="${safe(x.id)}">Es mío: crear evidencia</button><button class="btn small" data-tray="no" data-id="${safe(x.id)}">No soy yo</button>`
-        : `<button class="btn small" data-tray="entrevista" data-id="${safe(x.id)}">Profundizar con una entrevista</button>`}</div>
+        : `<button class="btn small" data-tray="entrevista" data-id="${safe(x.id)}">Profundizar con una entrevista</button><button class="btn small" data-tray="quitar" data-id="${safe(x.id)}">No soy yo</button>`}</div>
     </article>`;
   $("trayList").innerHTML = (pend.length ? `<h3>Por revisar (${pend.length})</h3>${pend.map(card).join("")}` : "") + (conf.length ? `<h3>Confirmado (${conf.length})</h3>${conf.map(card).join("")}` : "") + (desc ? `<p class="subtle">${desc} descartado${desc > 1 ? "s" : ""} por no ser tuyo${desc > 1 ? "s" : ""}.</p>` : "");
 }
@@ -1824,10 +1870,9 @@ $("trayForm").addEventListener("submit", async (ev) => {
   $("tMsg").textContent = "Puede tardar entre uno y tres minutos. No cierres la página.";
   try {
     const enlaces = $("tEnlaces").value.split("\n").map((x) => x.trim()).filter(Boolean);
-    const r = await (await api("/api/trayectoria", { nombre: $("tNombre").value.trim(), pistas: $("tPistas").value.trim(), enlaces, acepto: $("tAcepto").checked })).json();
-    perfil.trayectoria = r.trayectoria;
-    $("tMsg").textContent = r.encontrados ? `He encontrado ${r.encontrados} experiencias. Revisa cuáles son tuyas.` : "No he encontrado nada nuevo. Prueba con más pistas o con tus enlaces.";
-    renderTrayectoria();
+    if (!$("tAcepto").checked) throw new Error("Marca la autorización para que Lumen pueda buscar.");
+    const { cargadas, porRevisar } = await traceAndLoad({ nombre: $("tNombre").value.trim(), pistas: $("tPistas").value.trim(), enlaces });
+    $("tMsg").textContent = cargadas || porRevisar ? `He cargado ${cargadas} en tus evidencias y hay ${porRevisar} por revisar.` : "No he encontrado nada nuevo. Prueba con más pistas o con tus enlaces.";
   } catch (e) { aiProblem(e); $("tMsg").textContent = e.message; }
   finally { btn.disabled = false; btn.textContent = "Buscar mi trayectoria"; }
 });
@@ -1843,17 +1888,9 @@ $("trayList").addEventListener("click", async (ev) => {
   b.disabled = true;
   try {
     let evId = null;
-    if (b.dataset.tray === "si") {
-      evId = uid();
-      await saveEvidence({
-        id: evId, kind: "evidence", tipo: "trayectoria", titulo: x.titulo, fuente: x.tipo, url: x.fuentes[0]?.url || "", fecha: fechaDe(x), createdAt: Date.now(),
-        contexto: CONTEXTO_DE[x.tipo] || "", horas: 0, resultados: [], evidencias: { texto: [x.rol && `Papel: ${x.rol}.`, x.organizacion && `Organización: ${x.organizacion}.`, x.descripcion].filter(Boolean).join(" ") },
-        criterios: { validez: 1, suficiencia: 1 }, falta: "Haz una entrevista sobre esta experiencia para explicar qué aprendiste, cómo lo aplicaste y cuántas horas le dedicaste.",
-        artefactos: x.fuentes.map((f) => ({ name: f.titulo.slice(0, 120), url: f.url, origen: "internet", subidoEl: new Date().toISOString() })),
-        verificacion: { nombre: "", rol: "", contacto: "", estado: "sin solicitar" }, dialogue: [], ai: true,
-      });
-    }
-    const items = t.items.map((i) => (i.id === x.id ? { ...i, estado: b.dataset.tray === "si" ? "confirmada" : "descartada", evidencia_id: evId } : i));
+    if (b.dataset.tray === "si") { const e = evidenceFromTray(x); evId = e.id; await saveEvidence(e); }
+    if (b.dataset.tray === "quitar" && x.evidencia_id) { const e = evidences.find((i) => i.id === x.evidencia_id); if (e) await deleteEvidence(e); }
+    const items = t.items.map((i) => (i.id === x.id ? { ...i, estado: b.dataset.tray === "si" ? "confirmada" : "descartada", evidencia_id: evId, auto: false } : i));
     await updatePerfil({ trayectoria: { ...t, items } });
     renderTrayectoria();
     if (evId) maybeAutoPropose();
