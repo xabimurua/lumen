@@ -1,6 +1,6 @@
 // POST /api/fuente — reads a link the participant shares (article, web page, YouTube, Spotify)
 // and stores what it could read as a text source for the interview.
-import { decode, fetchPublic, MAX_CHARS, meta, readableText } from "../lib/web.js";
+import { decode, fetchPublic, MAX_CHARS, meta, readableText, readLinkedArticles } from "../lib/web.js";
 import { readPageWithClaude } from "../lib/claude.js";
 import { adminClient, chargeAiCall, allowMethods, readJson, requireConsentedProfile, requireUser, sendError, HttpError } from "../lib/server.js";
 
@@ -33,7 +33,10 @@ async function readLink(raw, userId) {
     if (leidoPorClaude.length >= 200) return { titulo, tipo: "web", leido: true, texto: `Título: ${titulo}\n${autor ? `Autor: ${autor}\n` : ""}Enlace: ${raw}\n\n${leidoPorClaude.slice(0, MAX_CHARS)}` };
     return { titulo, tipo: "web", leido: false, texto: `Página web de la que Lumen no pudo leer el texto (puede requerir suscripción o registro).\nTítulo: ${titulo}\n${autor ? `Autor: ${autor}\n` : ""}Enlace: ${raw}` };
   }
-  return { titulo, tipo: "web", leido: true, texto: `Título: ${titulo}\n${autor ? `Autor: ${autor}\n` : ""}Enlace: ${raw}\n\n${texto}` };
+  // Index pages (a profile, a blog, a list of news) carry their substance in the articles they link to.
+  const enlazados = isHtml ? await readLinkedArticles(body, raw, { budget: MAX_CHARS - texto.length }) : { count: 0, texto: "" };
+  const extra = enlazados.count ? `\n\n## Artículos enlazados desde la página (${enlazados.count})\n\n${enlazados.texto}` : "";
+  return { titulo, tipo: "web", leido: true, articulos: enlazados.count, texto: `Título: ${titulo}\n${autor ? `Autor: ${autor}\n` : ""}Enlace: ${raw}\n\n${texto}${extra}` };
 }
 
 export default async function handler(req, res) {
@@ -48,7 +51,7 @@ export default async function handler(req, res) {
     const path = `${user.id}/fuentes/${body.draftId}/enlace-${Date.now()}.txt`;
     const { error } = await adminClient().storage.from(BUCKET).upload(path, new Blob([leido.texto], { type: "text/plain;charset=utf-8" }), { contentType: "text/plain;charset=utf-8" });
     if (error) throw new HttpError(500, "No se pudo guardar el contenido del enlace.");
-    res.status(200).json({ fuente: { name: leido.titulo.slice(0, 200), path, tipo: leido.tipo, url: raw, leido: leido.leido } });
+    res.status(200).json({ fuente: { name: leido.titulo.slice(0, 200), path, tipo: leido.tipo, url: raw, leido: leido.leido, articulos: leido.articulos || 0 } });
   } catch (err) {
     if (err?.name === "TimeoutError") err = new HttpError(504, "La página tardó demasiado en responder.");
     sendError(res, err);

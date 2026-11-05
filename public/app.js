@@ -316,7 +316,7 @@ async function readLink(url) {
     const { fuente } = await (await api("/api/fuente", { url, draftId: draft.id })).json();
     draft.material = fuente;
     if (draft.titulo === url) draft.titulo = fuente.name;
-    el.textContent = fuente.leido ? `He leído «${fuente.name}». Te preguntaré a partir de su contenido.`
+    el.textContent = fuente.leido ? `He leído «${fuente.name}»${fuente.articulos ? ` y los ${fuente.articulos} artículos que enlaza` : ""}. Te preguntaré a partir de su contenido.`
       : fuente.tipo === "video" || fuente.tipo === "audio" ? `He identificado «${fuente.name}». No puedo ${fuente.tipo === "video" ? "ver el vídeo" : "escuchar el audio"}, así que te preguntaré a partir de lo que me cuentes.`
       : `No he podido leer el texto de «${fuente.name}» (quizá pide suscripción). Te preguntaré a partir de lo que me cuentes.`;
   } catch (e) {

@@ -11,7 +11,7 @@
       "maxDuration": 120
     },
     "api/fuente.js": {
-      "maxDuration": 30
+      "maxDuration": 60
     },
     "api/catalogo.js": {
       "maxDuration": 120
