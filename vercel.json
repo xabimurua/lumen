@@ -4,7 +4,8 @@
   "functions": {
     "api/chat.js": { "maxDuration": 60 },
     "api/analyze.js": { "maxDuration": 120 },
-    "api/fuente.js": { "maxDuration": 30 }
+    "api/fuente.js": { "maxDuration": 30 },
+    "api/catalogo.js": { "maxDuration": 120 }
   },
   "headers": [
     {

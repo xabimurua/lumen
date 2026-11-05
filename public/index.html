@@ -109,6 +109,7 @@
           <div class="panel">
             <h3>Hacia tu acreditación</h3>
             <div class="subtle" id="targetLine"></div>
+            <div id="miniProgress"></div>
             <div class="statrow">
               <div class="stat"><strong id="kReady">0/0</strong><small>Resultados listos</small></div>
               <div class="stat"><strong id="kHours">0</strong><small>Horas</small></div>
@@ -154,15 +155,16 @@
 
     <!-- OBJETIVO -->
     <section id="objetivo" class="view">
+      <div class="full" id="miAcreditacion"></div>
       <div class="full">
         <h2>¿Qué quieres acreditar?</h2>
-        <p class="note">Dilo con tus palabras: una asignatura, una titulación o una competencia. Lumen te propondrá un objetivo con sus resultados de aprendizaje y te dirá cuánto cubren ya tus evidencias.</p>
+        <p class="note">Dilo con tus palabras: una asignatura, una titulación o una competencia. Lumen buscará en el catálogo oficial las asignaturas que encajan y te dirá cuánto cubren ya tus evidencias.</p>
         <form class="form" id="intentForm" style="max-width:860px">
           <label class="field">Lo que quiero acreditar
             <textarea id="intentText" style="min-height:70px" placeholder="Ej.: Quiero que me reconozcan la asignatura de marketing digital del grado en ADE."></textarea>
           </label>
           <div class="row-actions">
-            <button class="btn primary" type="submit" id="intentBtn">Proponer objetivo</button>
+            <button class="btn primary" type="submit" id="intentBtn">Buscar en el catálogo</button>
             <button class="btn" type="button" id="discoverBtn">Que Lumen proponga con mis evidencias</button>
             <span class="toast" id="intentMsg" aria-live="polite"></span>
           </div>
@@ -170,36 +172,22 @@
       </div>
       <div class="full" id="propSection">
         <h2>Propuestas de acreditación</h2>
-        <p class="note">Lumen revisa tus evidencias cada vez que añades varias nuevas y te propone dónde podrían contar. Son orientativas: la titulación y la asignatura son habituales en universidades españolas, pero tendrás que comprobar la guía docente real del centro donde vayas a solicitarlo.</p>
+        <p class="note">Lumen revisa tus evidencias cada vez que añades varias nuevas y te propone asignaturas del catálogo oficial donde pueden contar. Todas son asignaturas reales, con los resultados de aprendizaje de su guía docente.</p>
         <div class="items" id="propList"></div>
       </div>
       <div class="full">
-        <h2>Objetivo activo</h2>
-        <div id="objWarn"></div>
-        <p class="note">Indica la titulación y la asignatura en la que quieres pedir reconocimiento, y copia sus resultados de aprendizaje de la guía docente. Lumen orientará las entrevistas hacia ellos. Si aún no tienes un objetivo, puedes trabajar con las competencias transversales genéricas.</p>
-        <form class="form" id="profileForm" style="max-width:860px">
-          <div class="edit-grid">
-            <label class="field">Universidad<input id="pUni" placeholder="Ej.: Universidad del País Vasco"></label>
-            <label class="field">Titulación<input id="pTit" placeholder="Ej.: Grado en Administración y Dirección de Empresas"></label>
-            <label class="field">Asignatura o módulo<input id="pAsig" placeholder="Ej.: Análisis de datos para la gestión"></label>
-            <label class="field">Créditos ECTS de la asignatura<input id="pEcts" type="number" min="0" max="60" step="0.5" placeholder="6"></label>
-          </div>
-          <label class="field">Resultados de aprendizaje (uno por línea)
-            <textarea id="pRA" style="min-height:170px"></textarea>
-          </label>
-          <details class="more">
-            <summary>Pegar la guía docente y extraer los resultados con IA</summary>
-            <label class="field" style="margin-top:10px">Texto de la guía docente
-              <textarea id="pGuide" style="min-height:140px" placeholder="Pega aquí el apartado de competencias o resultados de aprendizaje de la guía docente."></textarea>
-            </label>
-            <div class="row-actions"><button class="btn small" type="button" id="pExtract">Extraer resultados</button><span class="toast" id="pExtractMsg"></span></div>
-          </details>
-          <div class="row-actions">
-            <button class="btn primary" type="submit">Guardar objetivo</button>
-            <button class="btn" type="button" id="pGeneric">Usar competencias genéricas</button>
-            <span class="toast" id="pToast" aria-live="polite"></span>
-          </div>
-        </form>
+        <h2>Catálogo oficial</h2>
+        <p class="note">Asignaturas reales de títulos universitarios oficiales, dadas de alta por la coordinación del piloto a partir de su guía docente. Elige una para empezar a reunir evidencias para ella.</p>
+        <label class="field" style="max-width:560px">Buscar por asignatura, titulación o universidad<input id="catSearch" type="search" autocomplete="off" placeholder="Ej.: marketing, ADE, Deusto…"></label>
+        <div class="items" id="catList"></div>
+        <details class="more" style="max-width:860px">
+          <summary>¿No encuentras tu asignatura? Pide que la añadan</summary>
+          <form class="form" id="requestForm">
+            <label class="field">Universidad, titulación y asignatura<input id="reqText" required maxlength="1000" placeholder="Ej.: UPV/EHU, Grado en ADE, Dirección comercial"></label>
+            <label class="field">Enlace a su guía docente (si lo tienes)<input id="reqUrl" type="url" placeholder="https://…"></label>
+            <div class="row-actions"><button class="btn small" type="submit">Enviar a la coordinación</button><span class="toast" id="reqMsg" aria-live="polite"></span></div>
+          </form>
+        </details>
       </div>
       <div class="full">
         <h2>Cómo valora Lumen tus evidencias</h2>
@@ -217,6 +205,7 @@
     <section id="expediente" class="view">
       <div class="full">
         <h2 id="dossierTitle">Expediente de reconocimiento</h2>
+        <div id="dossierProgress"></div>
         <p class="note">Un resultado de aprendizaje queda listo para presentar cuando cumple las cinco comprobaciones: al menos dos evidencias, un producto adjunto, la confirmación de un tercero, profundidad suficiente y vigencia.</p>
         <div class="kpis" id="dossierKpis"></div>
         <div class="matrix" id="dossierMatrix"></div>
@@ -236,11 +225,48 @@
       </div>
       <div class="full" id="coordDetail" hidden>
         <h2 id="coordName"></h2>
-        <p class="note" id="coordTarget"></p>
+        <div id="coordProgress"></div>
         <div class="kpis" id="coordKpis"></div>
         <div class="matrix" id="coordMatrix"></div>
         <div class="row-actions"><button class="btn primary" id="coordExport">↓ Descargar su expediente (HTML)</button></div>
         <div class="items readonly" id="coordEvidences"></div>
+      </div>
+      <div class="full">
+        <h2>Catálogo oficial de asignaturas</h2>
+        <p class="note">Solo se puede acreditar contra asignaturas de este catálogo. Para añadir una, pega la URL de su guía docente oficial: Lumen copia sus datos y sus resultados de aprendizaje literalmente. Revísalos con la guía antes de publicar.</p>
+        <form class="form" id="guideForm" style="max-width:860px">
+          <label class="field">URL oficial de la guía docente<input id="gUrl" type="url" required placeholder="https://www.universidad.es/…/guia-docente.pdf"></label>
+          <details class="more">
+            <summary>La página no se deja leer: pegar el texto de la guía</summary>
+            <label class="field" style="margin-top:10px">Texto de la guía docente<textarea id="gText" style="min-height:120px"></textarea></label>
+          </details>
+          <div class="row-actions"><button class="btn primary" type="submit" id="gRead">Leer guía docente</button><span class="toast" id="gMsg" aria-live="polite"></span></div>
+        </form>
+        <form class="form" id="subjectForm" hidden style="max-width:860px;margin-top:18px">
+          <p class="falta" id="sAviso" hidden></p>
+          <div class="edit-grid">
+            <label class="field">Universidad<input id="sUni" required></label>
+            <label class="field">Titulación oficial<input id="sTit" required></label>
+            <label class="field">Código RUCT del título<input id="sRuct" inputmode="numeric" placeholder="Ej.: 2500123"></label>
+            <label class="field">Nivel<select id="sNivel"><option>Grado</option><option>Máster</option><option>Microcredencial</option><option>Título propio</option></select></label>
+            <label class="field">Asignatura<input id="sAsig" required></label>
+            <label class="field">Código de la asignatura<input id="sCod"></label>
+            <label class="field">Curso académico<input id="sCurso" placeholder="2025-26"></label>
+            <label class="field">Créditos ECTS<input id="sEcts" type="number" min="0.5" max="60" step="0.5" required></label>
+            <label class="field">Carácter<input id="sCar" placeholder="Obligatoria, optativa…"></label>
+          </div>
+          <label class="field">Resultados de aprendizaje oficiales (uno por línea, literales)<textarea id="sRA" required style="min-height:160px"></textarea></label>
+          <label class="field">Fuente<input id="sFuente" type="url" required readonly></label>
+          <div class="row-actions">
+            <button class="btn primary" type="submit" data-estado="publicada">Publicar en el catálogo</button>
+            <button class="btn" type="submit" data-estado="borrador">Guardar como borrador</button>
+            <button class="btn" type="button" id="sCancel">Cancelar</button>
+            <span class="toast" id="sMsg" aria-live="polite"></span>
+          </div>
+        </form>
+        <div class="items" id="catAdmin"></div>
+        <h3 style="margin-top:22px">Solicitudes de participantes</h3>
+        <div class="items" id="reqList"></div>
       </div>
     </section>
 

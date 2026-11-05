@@ -196,3 +196,17 @@ a{color:var(--accent)}
 .visually-hidden{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
 @media(max-width:720px){.tool-btn{width:40px;min-height:44px}.send{padding:0 12px}}
 @media(prefers-reduced-motion:reduce){.tool-btn.on{animation:none}}
+/* Official subject and course-like progress */
+.subject{display:grid;gap:10px}
+.subject-head{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-start}
+.subject-head b{font-family:var(--font-display);font-size:20px;display:block}
+.facts{display:flex;flex-wrap:wrap;gap:6px}
+.progress{display:grid;gap:8px;background:var(--tint);border-radius:14px;padding:16px;margin:14px 0}
+.progress-top{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap}
+.progress-top strong{font-family:var(--font-display);font-size:30px;font-variant-numeric:tabular-nums}
+.progress .track{height:10px;background:var(--paper)}
+.progress small{color:var(--muted)}
+.ra-list{display:grid;gap:6px;margin:0;padding:0;list-style:none;font-size:13px}
+.ra-list li{display:grid;grid-template-columns:40px 1fr auto;gap:8px;align-items:start;border-top:1px solid var(--line);padding-top:6px}
+.cat-row{display:flex;justify-content:space-between;gap:12px;align-items:center;border:1px solid var(--line);border-radius:12px;padding:12px 14px;flex-wrap:wrap}
+.cat-row small{color:var(--muted);display:block}

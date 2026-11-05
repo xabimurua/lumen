@@ -14,7 +14,7 @@ Necesitas cuatro cuentas: **GitHub**, **Supabase**, **Vercel** y **Anthropic Con
 ## 2. Supabase: base de datos, acceso y archivos
 
 1. En [supabase.com](https://supabase.com), crea un proyecto nuevo. En **Region**, elige una región de la UE (por ejemplo *Central EU (Frankfurt)*). Guarda la contraseña de la base de datos en un lugar seguro.
-2. Abre **SQL Editor → New query**, pega el contenido de `supabase/schema.sql` y pulsa **Run**. Crea las tablas, las reglas de seguridad y el almacén privado `artefactos`. (Si ya lo habías ejecutado con una versión anterior, ejecuta también `supabase/002_propuestas.sql`.)
+2. Abre **SQL Editor → New query**, pega el contenido de `supabase/schema.sql` y pulsa **Run**. Crea las tablas, las reglas de seguridad y el almacén privado `artefactos`. (Si ya lo habías ejecutado con una versión anterior, ejecuta también `supabase/002_propuestas.sql` y `supabase/003_catalogo.sql`, en ese orden.)
 3. En **Authentication → URL Configuration**:
    - **Site URL**: la dirección final de Lumen (por ejemplo `https://lumen.tudominio.es`, o la de Vercel del paso 3).
    - **Redirect URLs**: añade esa misma dirección.
@@ -50,6 +50,17 @@ update public.perfiles set role = 'coordinador'
 where user_id = (select id from auth.users where email = 'correo@universidad.es');
 ```
 
+## 5 bis. Cargar el catálogo oficial de asignaturas
+
+Lumen solo deja acreditar asignaturas reales del catálogo. Antes de abrir el piloto, la persona coordinadora:
+
+1. Entra en **Coordinación → Catálogo oficial de asignaturas**.
+2. Pega la URL oficial de la guía docente (PDF o página de la universidad) y pulsa **Leer guía docente**. Si la página no se deja leer, despliega «pegar el texto de la guía».
+3. Revisa cada campo con la guía: universidad, titulación oficial, código RUCT del título, asignatura, ECTS y, sobre todo, que los resultados de aprendizaje estén copiados literalmente.
+4. Pulsa **Publicar en el catálogo**. Desde ese momento los participantes la ven y Lumen puede proponerla.
+
+Las peticiones de asignaturas nuevas de los participantes aparecen en esa misma sección, en «Solicitudes de participantes».
+
 ## 6. Antes de abrir el piloto: lista de comprobación
 
 - [ ] `public/privacidad.html` sin ningún **[PENDIENTE]**, revisada por el delegado o la delegada de protección de datos.
@@ -58,6 +69,7 @@ where user_id = (select id from auth.users where email = 'correo@universidad.es'
 - [ ] Altas abiertas desactivadas en Supabase y SMTP propio configurado.
 - [ ] Prueba completa con una cuenta de prueba: acceso por correo, consentimiento, una entrevista, una entrada de diario con archivo, descarga del expediente y borrado de la cuenta.
 - [ ] Prueba de la vista de coordinación con una cuenta coordinadora y un participante que comparte su expediente.
+- [ ] Catálogo con al menos una asignatura publicada y revisada contra su guía docente oficial.
 - [ ] Copias de seguridad: el plan gratuito de Supabase no las incluye y pausa los proyectos inactivos. Para un piloto real se recomienda el plan Pro.
 
 ## Costes orientativos (30 personas, 3 meses)

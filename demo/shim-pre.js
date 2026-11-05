@@ -1,7 +1,8 @@
 // Demo backend for claude.ai: an in-browser stand-in for Supabase and the /api routes.
 // The production app.js runs unchanged on top of it.
 (function () {
-  const KEY = "lumen_demo_v1";
+  const KEY = "lumen_demo_v2";
+  const CAT1 = "c0000000-0000-4000-8000-000000000001";
   const ME = "00000000-0000-4000-8000-000000000001";
   const OTHER = "00000000-0000-4000-8000-000000000002";
   const use = (n) => (window.claude?.use ? window.claude.use(n) : Promise.resolve(null));
@@ -11,11 +12,19 @@
       session: null,
       perfiles: [
         { user_id: ME, nombre: "", role: "coordinador", consentimiento_at: null, consentimiento_version: null, compartir_con_coordinacion: false, objetivo: {}, created_at: new Date().toISOString() },
-        { user_id: OTHER, nombre: "Participante de ejemplo", role: "participante", consentimiento_at: "2026-10-01T09:00:00Z", consentimiento_version: "piloto-v1", compartir_con_coordinacion: true, objetivo: {}, created_at: "2026-10-01T09:00:00Z" },
+        { user_id: OTHER, nombre: "Participante de ejemplo", role: "participante", consentimiento_at: "2026-10-01T09:00:00Z", consentimiento_version: "piloto-v1", compartir_con_coordinacion: true, objetivo: { asignatura_id: CAT1 }, created_at: "2026-10-01T09:00:00Z" },
       ],
       evidencias: [
-        { id: "e0000000-0000-4000-8000-000000000001", user_id: OTHER, created_at: "2026-10-05T18:00:00Z", data: { id: "e0000000-0000-4000-8000-000000000001", kind: "evidence", tipo: "entrevista", titulo: "Coordinación de un banco de alimentos (ejemplo)", fecha: "2026-09-20", createdAt: 1, contexto: "Voluntariado", horas: 20, resultados: ["C5", "C3"], evidencias: { idea: "Explica cómo organizó turnos de 15 voluntarios con una hoja compartida.", aplicacion: "Redujo los huecos de cobertura del sábado.", limites: "Reconoce que le falta formación en gestión de conflictos." }, criterios: { validez: 2, suficiencia: 2 }, falta: "Adjuntar la planilla de turnos y la confirmación de la coordinadora.", artefactos: [], verificacion: { nombre: "Coordinadora del banco", rol: "Responsable de voluntariado", contacto: "", estado: "solicitada" }, dialogue: [] } },
+        { id: "e0000000-0000-4000-8000-000000000001", user_id: OTHER, created_at: "2026-10-05T18:00:00Z", data: { id: "e0000000-0000-4000-8000-000000000001", kind: "evidence", tipo: "entrevista", titulo: "Coordinación de un banco de alimentos (ejemplo)", fecha: "2026-09-20", createdAt: 1, contexto: "Voluntariado", horas: 20, resultados: ["RA1", "RA3"], evidencias: { idea: "Explica cómo organizó turnos de 15 voluntarios con una hoja compartida.", aplicacion: "Redujo los huecos de cobertura del sábado.", limites: "Reconoce que le falta formación en gestión de conflictos." }, criterios: { validez: 2, suficiencia: 2 }, falta: "Adjuntar la planilla de turnos y la confirmación de la coordinadora.", artefactos: [], verificacion: { nombre: "Coordinadora del banco", rol: "Responsable de voluntariado", contacto: "", estado: "solicitada" }, dialogue: [] } },
       ],
+      // Demo only: one clearly fictitious subject so the flows can be explored. In production the catalog
+      // holds only real subjects added by the coordination from their official teaching guides.
+      catalogo_asignaturas: [
+        { id: CAT1, universidad: "Universidad de ejemplo (ficticia)", titulacion: "Grado de ejemplo — NO OFICIAL", codigo_ruct: "", nivel: "Grado", asignatura: "Gestión de equipos (EJEMPLO DE DEMO)", codigo_asignatura: "", curso_academico: "2025-26", ects: 6, caracter: "Obligatoria",
+          resultados: [{ id: "RA1", texto: "Planifica y coordina el trabajo de un equipo para alcanzar objetivos compartidos." }, { id: "RA2", texto: "Gestiona conflictos y facilita la toma de decisiones en grupo." }, { id: "RA3", texto: "Comunica de forma clara la información del proyecto a las partes interesadas." }, { id: "RA4", texto: "Evalúa el desempeño del equipo y propone mejoras." }],
+          fuente_url: "https://example.org/demo-no-oficial", estado: "publicada", created_at: "2026-10-01T09:00:00Z" },
+      ],
+      solicitudes_catalogo: [],
     };
   }
   let db;
@@ -41,6 +50,7 @@
       const uid = db.session?.user?.id;
       if (this.op === "select") {
         let rows = this.rows();
+        if (this.t === "catalogo_asignaturas" && db.perfiles.find((p) => p.user_id === uid)?.role !== "coordinador") rows = rows.filter((r) => r.estado === "publicada");
         if (this.t === "perfiles") rows = rows.filter((r) => r.user_id === uid || (r.compartir_con_coordinacion && db.perfiles.find((p) => p.user_id === uid)?.role === "coordinador"));
         if (this.sort) rows = [...rows].sort((a, b) => String(a[this.sort] || "").localeCompare(String(b[this.sort] || "")));
         rows = structuredClone(rows);
@@ -49,7 +59,8 @@
       }
       if (this.op === "insert") {
         if (db[this.t].some((r) => r.user_id === this.payload.user_id && this.t === "perfiles")) return { error: { code: "23505" } };
-        db[this.t].push({ role: "participante", consentimiento_at: null, compartir_con_coordinacion: false, objetivo: {}, ...structuredClone(this.payload) });
+        const base = this.t === "perfiles" ? { role: "participante", consentimiento_at: null, compartir_con_coordinacion: false, objetivo: {} } : { id: crypto.randomUUID ? crypto.randomUUID() : String(Math.random()), user_id: uid, estado: this.t === "solicitudes_catalogo" ? "pendiente" : undefined, created_at: new Date().toISOString() };
+        db[this.t].push({ ...base, ...structuredClone(this.payload) });
       }
       if (this.op === "update") this.rows().forEach((r) => Object.assign(r, structuredClone(this.payload)));
       if (this.op === "upsert") {
@@ -117,6 +128,7 @@ Estilo: español; tono cálido y exigente; como mucho una frase que recoja algo 
     if (path === "/api/config") return json({ supabaseUrl: "demo", supabaseAnonKey: "demo" });
     if (path === "/api/account") { const uid = db.session?.user?.id; db.perfiles = db.perfiles.filter((p) => p.user_id !== uid); db.evidencias = db.evidencias.filter((e) => e.user_id !== uid); persist(); return new Response(null, { status: 204 }); }
     if (!path.startsWith("/api/")) return realFetch(url, init);
+    if (path === "/api/fuente") return fail(501, "En la demo no se pueden abrir enlaces; en la versión real sí.");
     const sample = await use("sample");
     if (!sample) return fail(503, "La IA no está disponible en esta vista de la demo.");
     const body = JSON.parse(init.body || "{}"), obj = myObj(), ids = obj.resultados.map((r) => r.id);
@@ -161,32 +173,41 @@ Responde con solo JSON: {"titulo":"máx. 8 palabras","resultados":["ID"],"valide
       if (body.kind === "propose") {
         const me = db.perfiles.find((x) => x.user_id === db.session?.user?.id);
         const evs = db.evidencias.filter((e) => e.user_id === me.user_id).map((e) => e.data);
+        const cat = db.catalogo_asignaturas.filter((x) => x.estado === "publicada");
         const intencion = String(body.intencion || "").trim().slice(0, 1000);
         if (!intencion && evs.length < 2) return fail(400, "Documenta al menos dos aprendizajes para que Lumen pueda proponerte acreditaciones.");
+        if (!cat.length) return fail(409, "Todavía no hay asignaturas en el catálogo oficial de Lumen.");
         const evIds = evs.map((e) => e.id);
-        const resumen = evs.slice(-40).map((e) => `- id ${e.id} · «${e.titulo}» · ${e.contexto || "sin contexto"} · ${e.horas || 0} h · ${e.fecha}\n  ${Object.values(e.evidencias || {}).join(" ").slice(0, 600)}`).join("\n");
-        const o = await sample.json(`Eres el orientador de acreditación de Lumen. Propón objetivos de reconocimiento académico (sistema universitario español) que encajen con los aprendizajes documentados${intencion ? " y con lo que la persona quiere acreditar" : ""}.
-${intencion ? `Lo que quiere acreditar: «${intencion}»` : "No ha dicho qué quiere acreditar: propón tú las opciones con mejor encaje."}
+        const o = await sample.json(`Eres el orientador de acreditación de Lumen. Relaciona los aprendizajes de esta persona con asignaturas del CATÁLOGO de abajo. No propongas nada que no esté en él ni cambies sus resultados de aprendizaje.
+${intencion ? `Lo que quiere acreditar: «${intencion}»` : "No ha dicho qué quiere acreditar: elige las de mejor encaje."}
+
+Catálogo:
+${cat.map((a) => `- asignatura ${a.id} · «${a.asignatura}» · ${a.titulacion} · ${a.universidad} · ${a.ects} ECTS\n${a.resultados.map((r) => `    ${r.id}: ${r.texto}`).join("\n")}`).join("\n")}
 
 Evidencias:
-${resumen || "(todavía ninguna)"}
+${evs.slice(-40).map((e) => `- id ${e.id} · «${e.titulo}» · ${e.contexto || "sin contexto"} · ${e.horas || 0} h\n  ${Object.values(e.evidencias || {}).join(" ").slice(0, 600)}`).join("\n") || "(todavía ninguna)"}
 
-Responde con solo un objeto JSON: {"propuestas":[{"titulo":"","tipo":"Asignatura de grado|Asignatura de máster|Microcredencial|Competencia transversal","titulacion":"","asignatura":"","ects":6,"resultados":[{"id":"RA1","texto":""}],"cobertura":[{"resultado_id":"RA1","evidencias":["id de evidencia"]}],"encaje":0,"motivo":"","siguientes_pasos":[""]}]}
-De 1 a 3 propuestas, de mayor a menor encaje.${intencion ? " La primera responde a lo que pide, aunque el encaje sea bajo." : ""} Titulación y asignatura plausibles y genéricas, sin afirmar que existan tal cual en una universidad concreta. De 4 a 6 resultados de aprendizaje como en una guía docente. cobertura: solo ids de la lista de evidencias que respalden de verdad cada resultado. encaje 0-100. motivo: dos frases citando evidencias por su título. siguientes_pasos: 2-4 acciones concretas.`);
-        const list = (Array.isArray(o?.propuestas) ? o.propuestas : []).slice(0, 3).map((p) => {
-          const ras = (p.resultados || []).slice(0, 8).map((r, i) => ({ id: "RA" + (i + 1), texto: String(r.texto || "").trim(), _o: r.id }));
-          const map = new Map(ras.map((r) => [r._o, r.id]));
-          return { titulo: p.titulo || "", tipo: p.tipo || "Asignatura de grado", titulacion: p.titulacion || "", asignatura: p.asignatura || p.titulo || "", ects: Number(p.ects) || 0,
-            resultados: ras.map(({ id, texto }) => ({ id, texto })),
-            cobertura: (p.cobertura || []).filter((c) => map.has(c.resultado_id)).map((c) => ({ resultado_id: map.get(c.resultado_id), evidencias: (c.evidencias || []).filter((id) => evIds.includes(id)) })),
-            encaje: Math.max(0, Math.min(100, Math.round(Number(p.encaje) || 0))), motivo: p.motivo || "", siguientes_pasos: (p.siguientes_pasos || []).slice(0, 4),
-            id: crypto.randomUUID ? crypto.randomUUID() : String(Math.random()), creada: new Date().toISOString(), origen: intencion ? "usuario" : "lumen", intencion, estado: "nueva" };
-        });
+Responde con solo JSON: {"propuestas":[{"asignatura_id":"","cobertura":[{"resultado_id":"RA1","evidencias":["id"]}],"encaje":0,"motivo":"","siguientes_pasos":[""]}],"sin_coincidencia":""}
+De 0 a 3 propuestas, solo con asignatura_id del catálogo.${intencion ? " Si nada del catálogo encaja con lo que pide, devuelve una lista vacía y explícalo en sin_coincidencia." : ""} cobertura: ids oficiales de resultados y solo ids de evidencias de la lista. encaje 0-100. motivo: dos frases citando evidencias por su título. siguientes_pasos: 2-4 acciones concretas.`);
+        const byId = new Map(cat.map((a) => [a.id, a]));
         const origen = intencion ? "usuario" : "lumen";
-        me.propuestas = [...list, ...(me.propuestas || []).filter((p) => p.estado === "adoptada" || (p.estado === "nueva" && p.origen !== origen))].slice(0, 8);
+        const list = (Array.isArray(o?.propuestas) ? o.propuestas : []).filter((p) => byId.has(p.asignatura_id)).slice(0, 3).map((p) => {
+          const a = byId.get(p.asignatura_id), ras = new Set(a.resultados.map((r) => r.id));
+          return { asignatura_id: a.id, asignatura: a.asignatura, titulacion: a.titulacion, universidad: a.universidad, ects: Number(a.ects), nivel: a.nivel, resultados: a.resultados, fuente_url: a.fuente_url,
+            cobertura: (p.cobertura || []).filter((c) => ras.has(c.resultado_id)).map((c) => ({ resultado_id: c.resultado_id, evidencias: (c.evidencias || []).filter((id) => evIds.includes(id)) })),
+            encaje: Math.max(0, Math.min(100, Math.round(Number(p.encaje) || 0))), motivo: p.motivo || "", siguientes_pasos: (p.siguientes_pasos || []).slice(0, 4),
+            id: crypto.randomUUID ? crypto.randomUUID() : String(Math.random()), creada: new Date().toISOString(), origen, intencion, estado: "nueva" };
+        });
+        me.propuestas = [...list, ...(me.propuestas || []).filter((p) => p.asignatura_id && (p.estado === "adoptada" || (p.estado === "nueva" && p.origen !== origen)))].slice(0, 8);
         me.propuestas_n_evidencias = evs.length;
         persist();
-        return json({ propuestas: me.propuestas });
+        return json({ propuestas: me.propuestas, sin_coincidencia: String(o?.sin_coincidencia || "") });
+      }
+      if (path === "/api/catalogo") {
+        if (!body.texto) return fail(400, "En la demo no se pueden abrir enlaces: despliega «pegar el texto de la guía» y pega su contenido.");
+        const o = await sample.json(`Este texto debería ser la guía docente oficial de una asignatura universitaria. Extrae sus datos COPIÁNDOLOS LITERALMENTE, sin inventar nada. Responde con solo JSON: {"es_guia_docente":true,"universidad":"","titulacion":"","nivel":"Grado|Máster|Microcredencial|Título propio","asignatura":"","codigo_asignatura":"","curso_academico":"","ects":0,"caracter":"","resultados":["resultado de aprendizaje literal"],"aviso":""}\n\n${String(body.texto).slice(0, 60000)}`);
+        if (o?.es_guia_docente === false) return fail(422, "Ese texto no parece la guía docente de una asignatura.");
+        return json({ ...o, resultados: (o.resultados || []).filter((t) => typeof t === "string" && t.trim()), fuente_url: body.url });
       }
       if (body.kind === "extract") {
         const arr = await sample.json(`Extrae de esta guía docente los resultados de aprendizaje (o, si no hay, las competencias específicas) tal como están redactados, sin códigos. Máximo 12. Responde con solo un array JSON de strings.\n\n${String(body.guia).slice(0, 20000)}`);
