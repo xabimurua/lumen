@@ -1,13 +1,14 @@
 // POST /api/fuente — reads a link the participant shares (article, web page, YouTube, Spotify)
 // and stores what it could read as a text source for the interview.
 import { decode, fetchPublic, MAX_CHARS, meta, readableText } from "../lib/web.js";
-import { adminClient, allowMethods, readJson, requireConsentedProfile, requireUser, sendError, HttpError } from "../lib/server.js";
+import { readPageWithClaude } from "../lib/claude.js";
+import { adminClient, chargeAiCall, allowMethods, readJson, requireConsentedProfile, requireUser, sendError, HttpError } from "../lib/server.js";
 
 const BUCKET = "artefactos";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MAX_PAGE_BYTES = 2 * 1024 * 1024;
 
-async function readLink(raw) {
+async function readLink(raw, userId) {
   const host = new URL(raw).hostname.replace(/^www\./, "");
   const oembed = /(^|\.)youtube\.com$|^youtu\.be$/.test(host) ? { api: "https://www.youtube.com/oembed?format=json&url=", plataforma: "YouTube", tipo: "video" }
     : host === "open.spotify.com" ? { api: "https://open.spotify.com/oembed?url=", plataforma: "Spotify", tipo: "audio" } : null;
@@ -26,7 +27,10 @@ async function readLink(raw) {
   const titulo = (isHtml ? meta(body, "og:title") || decode(body.match(/<title[^>]*>([^<]*)/i)?.[1] || "") : "").trim() || host;
   const texto = (isHtml ? readableText(body) : body).slice(0, MAX_CHARS);
   const autor = isHtml ? meta(body, "author") || meta(body, "article:author") : "";
-  if (texto.length < 600) {
+  if (texto.length < 200) {
+    await chargeAiCall(userId);
+    const leidoPorClaude = await readPageWithClaude(raw);
+    if (leidoPorClaude.length >= 200) return { titulo, tipo: "web", leido: true, texto: `Título: ${titulo}\n${autor ? `Autor: ${autor}\n` : ""}Enlace: ${raw}\n\n${leidoPorClaude.slice(0, MAX_CHARS)}` };
     return { titulo, tipo: "web", leido: false, texto: `Página web de la que Lumen no pudo leer el texto (puede requerir suscripción o registro).\nTítulo: ${titulo}\n${autor ? `Autor: ${autor}\n` : ""}Enlace: ${raw}` };
   }
   return { titulo, tipo: "web", leido: true, texto: `Título: ${titulo}\n${autor ? `Autor: ${autor}\n` : ""}Enlace: ${raw}\n\n${texto}` };
@@ -40,7 +44,7 @@ export default async function handler(req, res) {
     const body = readJson(req);
     const raw = String(body.url || "").trim().slice(0, 2000);
     if (!UUID.test(String(body.draftId || ""))) throw new HttpError(400, "Falta la entrevista a la que pertenece el enlace.");
-    const leido = await readLink(raw);
+    const leido = await readLink(raw, user.id);
     const path = `${user.id}/fuentes/${body.draftId}/enlace-${Date.now()}.txt`;
     const { error } = await adminClient().storage.from(BUCKET).upload(path, new Blob([leido.texto], { type: "text/plain;charset=utf-8" }), { contentType: "text/plain;charset=utf-8" });
     if (error) throw new HttpError(500, "No se pudo guardar el contenido del enlace.");
