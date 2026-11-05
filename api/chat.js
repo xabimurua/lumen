@@ -1,6 +1,7 @@
 // POST /api/chat — next interviewer turn, streamed as plain text.
 import { allowMethods, chargeAiCall, readJson, requireConsentedProfile, requireUser, sendError, HttpError } from "../lib/server.js";
 import { parseHistory, streamInterviewTurn } from "../lib/claude.js";
+import { loadSource } from "../lib/fuente.js";
 
 export default async function handler(req, res) {
   if (!allowMethods(req, res, ["POST"])) return;
@@ -11,6 +12,7 @@ export default async function handler(req, res) {
     const history = parseHistory(body.history);
     const titulo = String(body.titulo || "").slice(0, 300);
     if (!titulo) throw new HttpError(400, "Falta indicar qué quieres documentar.");
+    const fuente = await loadSource(user.id, body.fuente);
     await chargeAiCall(user.id);
 
     res.status(200);
@@ -22,6 +24,7 @@ export default async function handler(req, res) {
       titulo,
       history,
       closing: body.closing === true,
+      fuente,
       onText: (t) => res.write(t),
     });
     res.end();

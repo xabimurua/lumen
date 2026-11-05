@@ -46,7 +46,8 @@
       <b>Resumen</b>
       <ul>
         <li>Guardamos lo que registras (diario, entrevistas, archivos y objetivo) para construir tu expediente de evidencias.</li>
-        <li>Las preguntas y los análisis los genera Claude, un modelo de IA de Anthropic. Lo que escribes en una entrevista o en el diario se envía a Anthropic para generar la respuesta.</li>
+        <li>Las preguntas y los análisis los genera Claude, un modelo de IA de Anthropic. Lo que escribes en una entrevista o en el diario, y el material que adjuntes para la entrevista, se envía a Anthropic para generar la respuesta.</li>
+        <li>Si dictas por voz, el reconocimiento lo hace tu navegador (Google en Chrome, Apple en Safari). Lumen no guarda el audio.</li>
         <li>Las valoraciones de Lumen son orientativas. No conceden créditos ni sustituyen la evaluación de la universidad.</li>
         <li>Solo la coordinación del piloto puede ver tus evidencias, y solo si tú lo autorizas abajo. Puedes cambiarlo cuando quieras.</li>
         <li>Puedes descargar tus datos o eliminar tu cuenta y todo su contenido en cualquier momento desde «Mi cuenta».</li>
@@ -95,7 +96,10 @@
           <div class="messages" id="messages" aria-live="polite"></div>
           <div class="composer">
             <div class="compose-line">
-              <textarea id="answer" rows="1" placeholder="Responde a Lumen…" aria-label="Tu respuesta"></textarea>
+              <label class="tool-btn" for="chatFile" title="Adjuntar el material (PDF o texto)" aria-label="Adjuntar el material">📎</label>
+              <input type="file" id="chatFile" accept=".pdf,.txt,.md,application/pdf,text/plain,text/markdown" class="visually-hidden">
+              <textarea id="answer" rows="1" placeholder="Escribe, pega un enlace o dicta…" aria-label="Tu respuesta"></textarea>
+              <button class="tool-btn" id="mic" type="button" title="Dictar respuesta" aria-label="Dictar respuesta">🎙</button>
               <button class="send" id="send">Enviar ↗</button>
             </div>
             <div class="help" id="helpLine">Enter para enviar · Mayús+Enter para nueva línea · Entrevista guiada por Claude</div>

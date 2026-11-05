@@ -2,6 +2,7 @@
 import { adminClient, allowMethods, chargeAiCall, readJson, requireConsentedProfile, requireUser, sendError, HttpError } from "../lib/server.js";
 import { analyzeInterview, extractOutcomes, linkDiary, parseHistory, proposeAccreditations, CONTEXTOS } from "../lib/claude.js";
 import { randomUUID } from "node:crypto";
+import { loadSource } from "../lib/fuente.js";
 
 export default async function handler(req, res) {
   if (!allowMethods(req, res, ["POST"])) return;
@@ -13,8 +14,9 @@ export default async function handler(req, res) {
 
     if (body.kind === "interview") {
       const history = parseHistory(body.history);
+      const fuente = await loadSource(user.id, body.fuente);
       await chargeAiCall(user.id);
-      const out = await analyzeInterview({ objetivo: perfil.objetivo, titulo: String(body.titulo || "").slice(0, 300), history, today });
+      const out = await analyzeInterview({ objetivo: perfil.objetivo, titulo: String(body.titulo || "").slice(0, 300), history, today, fuente });
       return res.status(200).json(out);
     }
     if (body.kind === "diary") {

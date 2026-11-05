@@ -188,3 +188,11 @@ a{color:var(--accent)}
 .ra-cover div{display:grid;grid-template-columns:22px 1fr;gap:6px}
 .prop ul{margin:0;padding-left:18px;font-size:13px}
 .prop p{margin:0}
+/* Composer tools: attach and dictate */
+.tool-btn{display:grid;place-items:center;flex:none;width:46px;min-height:46px;border:1px solid var(--line);border-radius:13px;background:var(--paper);font-size:18px;cursor:pointer}
+.tool-btn:hover{background:var(--tint)}
+.tool-btn.on{background:var(--bad);border-color:var(--bad);animation:pulse 1.2s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.6}}
+.visually-hidden{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+@media(max-width:720px){.tool-btn{width:40px;min-height:44px}.send{padding:0 12px}}
+@media(prefers-reduced-motion:reduce){.tool-btn.on{animation:none}}

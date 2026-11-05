@@ -13,7 +13,7 @@ const GENERIC_RA = [
 ];
 const GENERIC_OBJ = { universidad: "", titulacion: "", asignatura: "", ects: "", resultados: GENERIC_RA, generico: true };
 const GENERIC_KEYS = { C1: ["critica", "argument", "evidencia", "sesgo", "cuestion", "razon", "analiz"], C2: ["inteligencia artificial", "algoritmo", "automat", "tecnolog", "datos", "excel", "programa", "digital"], C3: ["dialog", "escucha", "comunic", "narrativ", "explicar", "present", "escrib"], C4: ["democr", "particip", "ciudadan", "deliber", "social", "comunidad", "voluntari"], C5: ["lider", "equipo", "gestion", "proyecto", "estrateg", "planific", "coordin"] };
-const EV_LABELS = { idea: "Qué aprendió", aplicacion: "Aplicación", argumentacion: "Argumentación", conexion: "Conexión con su experiencia", limites: "Límites y dudas", sintesis: "Síntesis final", texto: "Registro del diario" };
+const EV_LABELS = { idea: "Qué aprendió", aplicacion: "Aplicación", argumentacion: "Argumentación", conexion: "Conexión con su experiencia", limites: "Límites y dudas", sintesis: "Síntesis final", texto: "Registro del diario", fidelidad: "Fidelidad al contenido" };
 const CRIT = [["validez", "Validez"], ["autenticidad", "Autenticidad"], ["suficiencia", "Suficiencia"], ["vigencia", "Vigencia"]];
 const CONTEXTOS = ["Trabajo", "Voluntariado", "Formación no reglada", "Vida diaria / autodidacta"];
 
@@ -112,10 +112,10 @@ async function deleteEvidence(e) {
   evidences = evidences.filter((x) => x.id !== e.id);
   render();
 }
-async function uploadFile(file, evidenceId) {
+async function uploadFile(file, evidenceId, folder = "") {
   if (file.size > MAX_FILE_BYTES) throw new Error("El archivo supera los 25 MB.");
   const clean = file.name.normalize("NFD").replace(/[^\w.-]+/g, "_").slice(-80);
-  const path = `${session.user.id}/${evidenceId}/${Date.now()}-${clean}`;
+  const path = `${session.user.id}/${folder ? folder + "/" : ""}${evidenceId}/${Date.now()}-${clean}`;
   const { error } = await sb.storage.from(BUCKET).upload(path, file, { contentType: file.type || undefined, upsert: false });
   if (error) throw new Error("No se pudo subir el archivo.");
   return { name: file.name, path, size: file.size, subidoEl: new Date().toISOString() };
@@ -226,11 +226,14 @@ function setPhase() { $("phase").textContent = PHASES[stage] || "En conversació
 function ask(text, options) { bubble(text); setPhase(); if (options) choices(options); $("answer").focus(); }
 
 let stage = "start", draft = null, busy = false;
+function newDraft() {
+  draft = { id: uid(), titulo: "", fuente: "", url: "", material: null, turns: [], used: [], history: [], createdAt: Date.now() };
+}
 function begin(seed) {
-  draft = { id: uid(), titulo: "", fuente: "", url: "", turns: [], used: [], history: [], createdAt: Date.now() };
-  if (seed) { draft.titulo = seed; stage = "dialogue"; ask(`Vamos a documentar «${seed}». Cuéntame con tus palabras qué aprendiste y en qué situación.`); return; }
+  newDraft();
+  if (seed) { startTopic(seed); return; }
   stage = "type";
-  ask("¿Qué quieres hacer hoy? Puedes documentar algo que hayas aprendido (una tarea del trabajo, un proyecto, un voluntariado, un curso o algo que resolviste en tu vida diaria) o decirme qué te gustaría acreditar.", ["Una tarea de mi trabajo", "Un proyecto que llevé", "Un voluntariado", "Un curso, libro o podcast", "Quiero acreditar algo concreto"]);
+  ask("¿Qué quieres hacer hoy? Cuéntame algo que hayas aprendido (una tarea del trabajo, un proyecto, un voluntariado, un curso o algo que resolviste en tu vida diaria), pega el enlace o el título de lo que viste, escuchaste o leíste, o adjunta el material con el clip 📎. También puedes decirme qué te gustaría acreditar.", ["Una tarea de mi trabajo", "Un proyecto que llevé", "Un voluntariado", "Un curso, libro o podcast", "Quiero acreditar algo concreto"]);
 }
 function setBusy(b) { busy = b; $("send").disabled = b; }
 
@@ -238,7 +241,7 @@ async function agentTurn(userText, { closing = false } = {}) {
   const el = bubble("Pensando…"); el.classList.add("thinking"); setPhase(); setBusy(true);
   try {
     if (!aiOk) throw new Error("offline");
-    const r = await api("/api/chat", { titulo: draft.titulo, history: draft.history, closing });
+    const r = await api("/api/chat", { titulo: draft.titulo, history: draft.history, closing, fuente: draft.material && { path: draft.material.path, name: draft.material.name } });
     const reader = r.body.getReader(), dec = new TextDecoder();
     let text = "";
     for (;;) {
@@ -255,6 +258,50 @@ async function agentTurn(userText, { closing = false } = {}) {
     const q = closing ? closingQuestion() : ruleQuestion(userText);
     el.classList.remove("thinking"); el.textContent = q; draft.history.push({ role: "assistant", content: q });
   } finally { setBusy(false); $("answer").focus(); }
+}
+/** Starts the interview on a topic: reads a link if there is one, then the agent asks the first question. */
+async function startTopic(value) {
+  const m = value.match(/https?:\/\/\S+/);
+  draft.titulo = draft.titulo || value.replace(/https?:\/\/\S+/g, "").trim() || value;
+  stage = "dialogue";
+  if (m) { draft.url = m[0]; await readLink(m[0]); }
+  draft.history.push({ role: "user", content: value });
+  await agentTurn(value);
+}
+async function readLink(url) {
+  const el = bubble("Abriendo el enlace…"); el.classList.add("thinking"); setBusy(true);
+  try {
+    const { fuente } = await (await api("/api/fuente", { url, draftId: draft.id })).json();
+    draft.material = fuente;
+    if (draft.titulo === url) draft.titulo = fuente.name;
+    el.textContent = fuente.leido ? `He leído «${fuente.name}». Te preguntaré a partir de su contenido.`
+      : fuente.tipo === "video" || fuente.tipo === "audio" ? `He identificado «${fuente.name}». No puedo ${fuente.tipo === "video" ? "ver el vídeo" : "escuchar el audio"}, así que te preguntaré a partir de lo que me cuentes.`
+      : `No he podido leer el texto de «${fuente.name}» (quizá pide suscripción). Te preguntaré a partir de lo que me cuentes.`;
+  } catch (e) {
+    el.textContent = `No he podido abrir el enlace. ${e.message} Te preguntaré a partir de lo que me cuentes.`;
+  } finally { el.classList.remove("thinking"); setBusy(false); }
+}
+/** Attaches a PDF or text file as the material the person learned from; the agent then asks about it. */
+async function attachSource(file) {
+  if (busy) return;
+  document.querySelectorAll(".choices").forEach((x) => x.remove());
+  if (!/\.(pdf|txt|md)$/i.test(file.name)) { bubble("Puedo leer archivos PDF o de texto (.txt, .md). Para otros formatos, pega un enlace o cuéntame de qué trata."); return; }
+  if (file.size > 10 * 1024 * 1024) { bubble("El archivo supera los 10 MB. Adjunta solo la parte que te interesa."); return; }
+  if (!draft || ["start", "done", "intent"].includes(stage)) newDraft();
+  bubble("📎 " + file.name, "user");
+  const el = bubble("Subiendo el archivo…"); el.classList.add("thinking"); setBusy(true);
+  try {
+    const a = await uploadFile(file, draft.id, "fuentes");
+    draft.material = { name: file.name, path: a.path, tipo: /\.pdf$/i.test(file.name) ? "pdf" : "texto", leido: true };
+    el.textContent = `He recibido «${file.name}». Te preguntaré a partir de su contenido.`;
+  } catch (e) {
+    el.textContent = e.message; return;
+  } finally { el.classList.remove("thinking"); setBusy(false); }
+  if (!draft.titulo) draft.titulo = file.name.replace(/\.[^.]+$/, "");
+  stage = "dialogue";
+  const msg = `He adjuntado «${file.name}», el contenido del que aprendí.`;
+  draft.history.push({ role: "user", content: msg });
+  await agentTurn(msg);
 }
 const closingQuestion = () => "Para cerrar: en dos o tres frases, ¿qué sabes hacer ahora, qué prueba lo demuestra mejor y qué te falta todavía? Si prefieres seguir profundizando, escribe «seguir».";
 
@@ -287,12 +334,11 @@ async function submit(value) {
   }
   if (stage === "type") {
     if (/^(una tarea de mi trabajo|un proyecto que lleve|un voluntariado|un curso, libro o podcast)$/.test(normalize(value))) {
-      draft.fuente = value; stage = "titleAsk"; ask("Perfecto. Descríbelo en una frase: ¿qué era y qué hiciste tú?"); return;
+      draft.fuente = value; stage = "titleAsk"; ask(normalize(value).startsWith("un curso") ? "Perfecto. Pega el enlace o escribe el título y el autor. Si tienes el material en PDF, adjúntalo con el clip 📎." : "Perfecto. Descríbelo en una frase: ¿qué era y qué hiciste tú?"); return;
     }
-    draft.titulo = value; const m = value.match(/https?:\/\/\S+/); if (m) draft.url = m[0];
-    stage = "dialogue"; ask(`Vamos a documentar «${value}». Cuéntame con tus palabras qué aprendiste y en qué situación.`); return;
+    await startTopic(value); return;
   }
-  if (stage === "titleAsk") { draft.titulo = value; stage = "dialogue"; ask("Gracias. ¿Qué aprendiste exactamente y qué hiciste tú, en primera persona?"); return; }
+  if (stage === "titleAsk") { await startTopic(value); return; }
   if (stage === "dialogue") {
     draft.turns.push({ text: value }); draft.history.push({ role: "user", content: value });
     if (draft.turns.length >= MAX_TURNS) { stage = "review"; await agentTurn(value, { closing: true }); return; }
@@ -311,8 +357,8 @@ async function analyzeInterview(synthesis) {
   const fallback = { titulo: "", evidencias: { sintesis: synthesis }, resultados: ruleLink(userText + " " + draft.titulo), validez: 1, suficiencia: userText.length > 900 ? 2 : 1, contexto: "", horas: 0, fecha: "", verificador_nombre: "", verificador_rol: "", falta: "Añade un producto y la confirmación de alguien que haya visto tu trabajo." };
   if (!aiOk) return fallback;
   try {
-    const o = await (await api("/api/analyze", { kind: "interview", titulo: draft.titulo, history: draft.history })).json();
-    const ev = {}; for (const k of ["idea", "aplicacion", "argumentacion", "conexion", "limites"]) if (o.evidencias?.[k]?.trim()) ev[k] = o.evidencias[k].trim();
+    const o = await (await api("/api/analyze", { kind: "interview", titulo: draft.titulo, history: draft.history, fuente: draft.material && { path: draft.material.path, name: draft.material.name } })).json();
+    const ev = {}; for (const k of ["idea", "aplicacion", "argumentacion", "conexion", "limites", "fidelidad"]) if (o.evidencias?.[k]?.trim()) ev[k] = o.evidencias[k].trim();
     ev.sintesis = synthesis;
     return { ...o, evidencias: ev };
   } catch (e) {
@@ -325,7 +371,7 @@ async function completeInterview(synthesis) {
   const el = bubble("Ordenando tus evidencias…"); el.classList.add("thinking"); setBusy(true);
   const r = await analyzeInterview(synthesis);
   const e = {
-    id: draft.id, kind: "evidence", tipo: "entrevista", titulo: r.titulo || draft.titulo, fuente: draft.fuente, url: draft.url,
+    id: draft.id, kind: "evidence", tipo: "entrevista", titulo: r.titulo || draft.titulo, fuente: draft.fuente, url: draft.url, material: draft.material,
     fecha: /^\d{4}-\d{2}-\d{2}$/.test(r.fecha) ? r.fecha : today(), createdAt: draft.createdAt,
     contexto: CONTEXTOS.includes(r.contexto) ? r.contexto : "", horas: num(r.horas), resultados: r.resultados || [], evidencias: r.evidencias,
     criterios: { validez: clamp03(r.validez), suficiencia: clamp03(r.suficiencia) }, falta: r.falta || "",
@@ -577,7 +623,8 @@ function renderEvidenceList(container, evs, obj, editable) {
     const vPill = v.estado === "confirmada" ? '<span class="pill ok">Confirmada por tercero</span>' : v.estado === "solicitada" ? '<span class="pill warn">Confirmación solicitada</span>' : '<span class="pill">Sin confirmar</span>';
     const raTags = (e.resultados || []).map((id) => { const r = obj.resultados.find((x) => x.id === id); return `<span class="pill ra" title="${safe(r?.texto || "Este resultado ya no está en el objetivo")}">${safe(id)}</span>`; }).join("") || '<span class="pill">Sin resultado vinculado</span>';
     const texts = Object.entries(e.evidencias || {}).map(([k, t]) => `<p><strong>${safe(EV_LABELS[k] || k)}:</strong> ${safe(t)}</p>`).join("");
-    const arts = (e.artefactos || []).map((a) => `<button class="pill" data-act="open" data-path="${safe(a.path)}">📎 ${safe(a.name)}</button>`).join("");
+    const mat = e.material ? `<button class="pill" data-act="open" data-path="${safe(e.material.path)}" title="Contenido del que aprendió">📄 ${safe(e.material.name)}</button>` : "";
+    const arts = mat + (e.artefactos || []).map((a) => `<button class="pill" data-act="open" data-path="${safe(a.path)}">📎 ${safe(a.name)}</button>`).join("");
     const verif = !editable && v.nombre ? `<p><strong>Confirmación:</strong> ${safe(v.nombre)}${v.rol ? " (" + safe(v.rol) + ")" : ""}${v.contacto ? " · " + safe(v.contacto) : ""} · ${safe(v.estado)}</p>` : "";
     const id = safe(e.id);
     return `<article class="card">
@@ -779,8 +826,26 @@ $("consentForm").addEventListener("submit", async (ev) => {
   } catch { $("consentError").textContent = "No se pudo guardar. Inténtalo de nuevo."; }
 });
 
+/* ================= Composer: attach and dictate ================= */
+$("chatFile").addEventListener("change", (ev) => { const f = ev.target.files?.[0]; ev.target.value = ""; if (f) attachSource(f); });
+const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null;
+if (!Recognition) $("mic").hidden = true;
+$("mic").onclick = () => {
+  if (rec) { rec.stop(); return; }
+  rec = new Recognition();
+  rec.lang = "es-ES"; rec.interimResults = true; rec.continuous = true;
+  const base = $("answer").value ? $("answer").value.replace(/\s*$/, " ") : "";
+  rec.onresult = (ev) => { let t = ""; for (const r of ev.results) t += r[0].transcript; $("answer").value = base + t; };
+  rec.onerror = (ev) => { $("helpLine").textContent = ev.error === "not-allowed" ? "Para dictar, permite el uso del micrófono en tu navegador." : "No se pudo usar el dictado. Escribe tu respuesta."; };
+  rec.onend = () => { rec = null; $("mic").classList.remove("on"); $("mic").setAttribute("aria-label", "Dictar respuesta"); $("answer").focus(); };
+  rec.start();
+  $("mic").classList.add("on"); $("mic").setAttribute("aria-label", "Detener dictado");
+  $("helpLine").textContent = "Escuchando… Pulsa el micrófono para terminar y revisa el texto antes de enviarlo.";
+};
+
 /* ================= Composer ================= */
-function respond() { const v = $("answer").value; if (v.trim()) submit(v); }
+function respond() { if (rec) rec.stop(); const v = $("answer").value; if (v.trim()) submit(v); }
 $("send").onclick = respond;
 $("answer").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); respond(); } });
 
