@@ -148,6 +148,13 @@ async function api(path, body) {
   }
   return r;
 }
+/** Makes a failed AI call visible: the pill turns red and the help line says why. */
+function aiProblem(e) {
+  if (e?.status === 429 || e?.status === 403) { aiState(false, e.message); return; }
+  if (!e?.status) return;
+  $("aiStatus").textContent = "IA con problemas"; $("aiStatus").classList.remove("live");
+  $("helpLine").textContent = `La IA no ha respondido: ${e.message} Mientras tanto, Lumen usa preguntas automáticas.`;
+}
 function aiState(ok, msg) {
   aiOk = ok;
   const st = $("aiStatus");
@@ -234,7 +241,7 @@ function ask(text, options) { bubble(text); setPhase(); if (options) choices(opt
 
 let stage = "start", draft = null, busy = false;
 function newDraft() {
-  draft = { id: uid(), titulo: "", fuente: "", url: "", material: null, turns: [], used: [], history: [], createdAt: Date.now() };
+  draft = { id: uid(), titulo: "", fuente: "", url: "", material: null, contexto: null, turns: [], used: [], history: [], createdAt: Date.now() };
 }
 function begin(seed) {
   newDraft();
@@ -248,7 +255,7 @@ async function agentTurn(userText, { closing = false } = {}) {
   const el = bubble("Pensando…"); el.classList.add("thinking"); setPhase(); setBusy(true);
   try {
     if (!aiOk) throw new Error("offline");
-    const r = await api("/api/chat", { titulo: draft.titulo, history: draft.history, closing, fuente: draft.material && { path: draft.material.path, name: draft.material.name } });
+    const r = await api("/api/chat", { titulo: draft.titulo, history: draft.history, closing, fuente: draft.material && { path: draft.material.path, name: draft.material.name }, contexto: draft.contexto && { path: draft.contexto.path, name: draft.contexto.name } });
     const reader = r.body.getReader(), dec = new TextDecoder();
     let text = "";
     for (;;) {
@@ -260,8 +267,9 @@ async function agentTurn(userText, { closing = false } = {}) {
     text = text.trim();
     if (!text) throw new Error("empty");
     el.textContent = text; draft.history.push({ role: "assistant", content: text });
+    if (!$("aiStatus").classList.contains("live")) aiState(true, "Enter para enviar · Mayús+Enter para nueva línea · Entrevista guiada por Claude");
   } catch (e) {
-    if (e.status === 429 || e.status === 403) aiState(false, e.message);
+    aiProblem(e);
     const q = closing ? closingQuestion() : ruleQuestion(userText);
     el.classList.remove("thinking"); el.textContent = q; draft.history.push({ role: "assistant", content: q });
   } finally { setBusy(false); $("answer").focus(); }
@@ -272,8 +280,33 @@ async function startTopic(value) {
   draft.titulo = draft.titulo || value.replace(/https?:\/\/\S+/g, "").trim() || value;
   stage = "dialogue";
   if (m) { draft.url = m[0]; await readLink(m[0]); }
+  else if (!draft.material) await research(value);
   draft.history.push({ role: "user", content: value });
   await agentTurn(value);
+}
+/** Words that suggest the message names something that can be looked up online. */
+const REFERENCE_HINT = /\b(busca|buscar|investiga|internet|google|proyecto|empresa|startup|asociaci[oó]n|fundaci[oó]n|cooperativa|ong|s\.?l\.?|s\.?a\.?|estudio|investigaci[oó]n|curso|m[aá]ster|libro|art[ií]culo|p[oó]dcast|programa|congreso|premio|publicaci[oó]n|app|plataforma)\b|www\.|\.(com|es|org|eus|net)\b/i;
+/** Searches the web for what the person mentions and shows what it found, with sources, for them to confirm. */
+async function research(texto) {
+  if (!aiOk) return;
+  const el = bubble("Buscando en internet…"); el.classList.add("thinking"); setBusy(true);
+  try {
+    const conversacion = draft.history.slice(-6).map((m) => (m.role === "user" ? "Persona: " : "Lumen: ") + m.content).join("\n");
+    const r = await (await api("/api/investigar", { texto, draftId: draft.id, previo: draft.contexto?.path || "", conversacion })).json();
+    if (r.nada) { el.closest(".msg").remove(); return; }
+    draft.contexto = r.contexto;
+    el.textContent = `He buscado en internet. ${r.resumen || "He encontrado información sobre lo que mencionas."}\n¿Es esto de lo que hablas? Si no, dímelo en tu respuesta.`;
+    const list = document.createElement("div"); list.className = "sources";
+    for (const f of r.fuentes || []) {
+      const a = document.createElement("a"); a.href = f.url; a.target = "_blank"; a.rel = "noopener";
+      try { a.textContent = (f.title || f.url).slice(0, 80) + " · " + new URL(f.url).hostname.replace(/^www\./, ""); } catch { a.textContent = f.url; }
+      list.append(a);
+    }
+    el.append(list);
+  } catch (e) {
+    aiProblem(e);
+    el.closest(".msg").remove();
+  } finally { el.classList.remove("thinking"); setBusy(false); }
 }
 async function readLink(url) {
   const el = bubble("Abriendo el enlace…"); el.classList.add("thinking"); setBusy(true);
@@ -347,6 +380,7 @@ async function submit(value) {
   }
   if (stage === "titleAsk") { await startTopic(value); return; }
   if (stage === "dialogue") {
+    if (REFERENCE_HINT.test(value)) await research(value);
     draft.turns.push({ text: value }); draft.history.push({ role: "user", content: value });
     if (draft.turns.length >= MAX_TURNS) { stage = "review"; await agentTurn(value, { closing: true }); return; }
     await agentTurn(value); return;
@@ -364,12 +398,12 @@ async function analyzeInterview(synthesis) {
   const fallback = { titulo: "", evidencias: { sintesis: synthesis }, resultados: ruleLink(userText + " " + draft.titulo), validez: 1, suficiencia: userText.length > 900 ? 2 : 1, contexto: "", horas: 0, fecha: "", verificador_nombre: "", verificador_rol: "", falta: "Añade un producto y la confirmación de alguien que haya visto tu trabajo." };
   if (!aiOk) return fallback;
   try {
-    const o = await (await api("/api/analyze", { kind: "interview", titulo: draft.titulo, history: draft.history, fuente: draft.material && { path: draft.material.path, name: draft.material.name } })).json();
+    const o = await (await api("/api/analyze", { kind: "interview", titulo: draft.titulo, history: draft.history, fuente: draft.material && { path: draft.material.path, name: draft.material.name }, contexto: draft.contexto && { path: draft.contexto.path, name: draft.contexto.name } })).json();
     const ev = {}; for (const k of ["idea", "aplicacion", "argumentacion", "conexion", "limites", "fidelidad"]) if (o.evidencias?.[k]?.trim()) ev[k] = o.evidencias[k].trim();
     ev.sintesis = synthesis;
     return { ...o, evidencias: ev };
   } catch (e) {
-    if (e.status === 429 || e.status === 403) aiState(false, e.message);
+    aiProblem(e);
     return fallback;
   }
 }
@@ -378,7 +412,7 @@ async function completeInterview(synthesis) {
   const el = bubble("Ordenando tus evidencias…"); el.classList.add("thinking"); setBusy(true);
   const r = await analyzeInterview(synthesis);
   const e = {
-    id: draft.id, kind: "evidence", tipo: "entrevista", titulo: r.titulo || draft.titulo, fuente: draft.fuente, url: draft.url, material: draft.material,
+    id: draft.id, kind: "evidence", tipo: "entrevista", titulo: r.titulo || draft.titulo, fuente: draft.fuente, url: draft.url, material: draft.material, contexto: draft.contexto,
     fecha: /^\d{4}-\d{2}-\d{2}$/.test(r.fecha) ? r.fecha : today(), createdAt: draft.createdAt,
     contexto: CONTEXTOS.includes(r.contexto) ? r.contexto : "", horas: num(r.horas), resultados: r.resultados || [], evidencias: r.evidencias,
     criterios: { validez: clamp03(r.validez), suficiencia: clamp03(r.suficiencia) }, falta: r.falta || "",
@@ -666,7 +700,8 @@ function renderEvidenceList(container, evs, obj, editable) {
     const vPill = v.estado === "confirmada" ? '<span class="pill ok">Confirmada por tercero</span>' : v.estado === "solicitada" ? '<span class="pill warn">Confirmación solicitada</span>' : '<span class="pill">Sin confirmar</span>';
     const raTags = (e.resultados || []).map((id) => { const r = obj.resultados.find((x) => x.id === id); return `<span class="pill ra" title="${safe(r?.texto || "Este resultado ya no está en el objetivo")}">${safe(id)}</span>`; }).join("") || '<span class="pill">Sin resultado vinculado</span>';
     const texts = Object.entries(e.evidencias || {}).map(([k, t]) => `<p><strong>${safe(EV_LABELS[k] || k)}:</strong> ${safe(t)}</p>`).join("");
-    const mat = e.material ? `<button class="pill" data-act="open" data-path="${safe(e.material.path)}" title="Contenido del que aprendió">📄 ${safe(e.material.name)}</button>` : "";
+    const mat = (e.material ? `<button class="pill" data-act="open" data-path="${safe(e.material.path)}" title="Contenido del que aprendió">📄 ${safe(e.material.name)}</button>` : "")
+      + (e.contexto ? `<button class="pill" data-act="open" data-path="${safe(e.contexto.path)}" title="Información buscada en internet durante la entrevista">🔎 Contexto de internet</button>` : "");
     const arts = mat + (e.artefactos || []).map((a) => `<button class="pill" data-act="open" data-path="${safe(a.path)}">📎 ${safe(a.name)}</button>`).join("");
     const verif = !editable && v.nombre ? `<p><strong>Confirmación:</strong> ${safe(v.nombre)}${v.rol ? " (" + safe(v.rol) + ")" : ""}${v.contacto ? " · " + safe(v.contacto) : ""} · ${safe(v.estado)}</p>` : "";
     const id = safe(e.id);

@@ -210,3 +210,5 @@ a{color:var(--accent)}
 .ra-list li{display:grid;grid-template-columns:40px 1fr auto;gap:8px;align-items:start;border-top:1px solid var(--line);padding-top:6px}
 .cat-row{display:flex;justify-content:space-between;gap:12px;align-items:center;border:1px solid var(--line);border-radius:12px;padding:12px 14px;flex-wrap:wrap}
 .cat-row small{color:var(--muted);display:block}
+.sources{display:grid;gap:4px;margin-top:10px;font-size:12px;white-space:normal}
+.sources a{color:var(--accent);overflow-wrap:anywhere}

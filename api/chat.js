@@ -12,7 +12,7 @@ export default async function handler(req, res) {
     const history = parseHistory(body.history);
     const titulo = String(body.titulo || "").slice(0, 300);
     if (!titulo) throw new HttpError(400, "Falta indicar qué quieres documentar.");
-    const fuente = await loadSource(user.id, body.fuente);
+    const [fuente, contexto] = await Promise.all([loadSource(user.id, body.fuente), loadSource(user.id, body.contexto)]);
     await chargeAiCall(user.id);
 
     res.status(200);
@@ -25,6 +25,7 @@ export default async function handler(req, res) {
       history,
       closing: body.closing === true,
       fuente,
+      contexto,
       onText: (t) => res.write(t),
     });
     res.end();

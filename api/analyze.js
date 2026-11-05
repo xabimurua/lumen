@@ -14,9 +14,9 @@ export default async function handler(req, res) {
 
     if (body.kind === "interview") {
       const history = parseHistory(body.history);
-      const fuente = await loadSource(user.id, body.fuente);
+      const [fuente, contexto] = await Promise.all([loadSource(user.id, body.fuente), loadSource(user.id, body.contexto)]);
       await chargeAiCall(user.id);
-      const out = await analyzeInterview({ objetivo: perfil.objetivo, titulo: String(body.titulo || "").slice(0, 300), history, today, fuente });
+      const out = await analyzeInterview({ objetivo: perfil.objetivo, titulo: String(body.titulo || "").slice(0, 300), history, today, fuente, contexto });
       return res.status(200).json(out);
     }
     if (body.kind === "diary") {

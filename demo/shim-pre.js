@@ -129,6 +129,7 @@ Estilo: español; tono cálido y exigente; como mucho una frase que recoja algo 
     if (path === "/api/account") { const uid = db.session?.user?.id; db.perfiles = db.perfiles.filter((p) => p.user_id !== uid); db.evidencias = db.evidencias.filter((e) => e.user_id !== uid); persist(); return new Response(null, { status: 204 }); }
     if (!path.startsWith("/api/")) return realFetch(url, init);
     if (path === "/api/fuente") return fail(501, "En la demo no se pueden abrir enlaces; en la versión real sí.");
+    if (path === "/api/investigar") return json({ nada: true });
     const sample = await use("sample");
     if (!sample) return fail(503, "La IA no está disponible en esta vista de la demo.");
     const body = JSON.parse(init.body || "{}"), obj = myObj(), ids = obj.resultados.map((r) => r.id);
