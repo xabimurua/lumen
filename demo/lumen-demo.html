@@ -387,13 +387,13 @@ a{color:var(--accent)}
       <div class="full" id="miAcreditacion"></div>
       <div class="full">
         <h2>¿Qué quieres acreditar?</h2>
-        <p class="note">Dilo con tus palabras: una asignatura, una titulación o una competencia. Lumen buscará en el catálogo oficial las asignaturas que encajan y te dirá cuánto cubren ya tus evidencias.</p>
+        <p class="note">Dilo con tus palabras: una asignatura, una titulación o una competencia. Lumen buscará asignaturas reales de títulos oficiales que encajen (primero en universidades con convenio con Lumen y, si no, en el resto de universidades españolas) y te dirá cuánto cubren ya tus evidencias.</p>
         <form class="form" id="intentForm" style="max-width:860px">
           <label class="field">Lo que quiero acreditar
             <textarea id="intentText" style="min-height:70px" placeholder="Ej.: Quiero que me reconozcan la asignatura de marketing digital del grado en ADE."></textarea>
           </label>
           <div class="row-actions">
-            <button class="btn primary" type="submit" id="intentBtn">Buscar en el catálogo</button>
+            <button class="btn primary" type="submit" id="intentBtn">Buscar en las universidades</button>
             <button class="btn" type="button" id="discoverBtn">Que Lumen proponga con mis evidencias</button>
             <span class="toast" id="intentMsg" aria-live="polite"></span>
           </div>
@@ -401,12 +401,12 @@ a{color:var(--accent)}
       </div>
       <div class="full" id="propSection">
         <h2>Propuestas de acreditación</h2>
-        <p class="note">Lumen revisa tus evidencias cada vez que añades varias nuevas y te propone asignaturas del catálogo oficial donde pueden contar. Todas son asignaturas reales, con los resultados de aprendizaje de su guía docente.</p>
+        <p class="note">Lumen revisa tus evidencias cada vez que añades varias nuevas y te propone asignaturas donde pueden contar. Todas son asignaturas reales de títulos oficiales, con los resultados de aprendizaje de su guía docente.</p>
         <div class="items" id="propList"></div>
       </div>
       <div class="full">
-        <h2>Catálogo oficial</h2>
-        <p class="note">Asignaturas reales de títulos universitarios oficiales, dadas de alta por la coordinación del piloto a partir de su guía docente. Elige una para empezar a reunir evidencias para ella.</p>
+        <h2>Asignaturas disponibles</h2>
+        <p class="note">Asignaturas reales de títulos universitarios oficiales: las de universidades con convenio con Lumen y las que Lumen ha encontrado para los participantes. Elige una para reunir evidencias para ella.</p>
         <label class="field" style="max-width:560px">Buscar por asignatura, titulación o universidad<input id="catSearch" type="search" autocomplete="off" placeholder="Ej.: marketing, ADE, Deusto…"></label>
         <div class="items" id="catList"></div>
         <details class="more" style="max-width:860px">
@@ -461,8 +461,8 @@ a{color:var(--accent)}
         <div class="items readonly" id="coordEvidences"></div>
       </div>
       <div class="full">
-        <h2>Catálogo oficial de asignaturas</h2>
-        <p class="note">Solo se puede acreditar contra asignaturas de este catálogo. Para añadir una, pega la URL de su guía docente oficial: Lumen copia sus datos y sus resultados de aprendizaje literalmente. Revísalos con la guía antes de publicar.</p>
+        <h2>Catálogo y convenios</h2>
+        <p class="note">Aquí están las asignaturas con convenio y las que Lumen ha detectado en universidades sin convenio porque las buscan los participantes: estas últimas indican con qué universidades conviene negociar. Al firmar un convenio, revisa la asignatura con su guía docente y márcala «con convenio». También puedes añadir asignaturas pegando la URL de su guía docente oficial.</p>
         <form class="form" id="guideForm" style="max-width:860px">
           <label class="field">URL oficial de la guía docente<input id="gUrl" type="url" required placeholder="https://www.universidad.es/…/guia-docente.pdf"></label>
           <details class="more">
@@ -1117,12 +1117,12 @@ async function submit(value) {
     stage = "intent"; ask("¿Qué te gustaría que te reconocieran? Dímelo con tus palabras: una asignatura, una titulación o una competencia."); return;
   }
   if (stage === "intent") {
-    const el = bubble("Buscando cómo encaja con lo que ya has documentado…"); el.classList.add("thinking"); setBusy(true);
+    const el = bubble("Buscando en las universidades cómo encaja con lo que has documentado… Puede tardar uno o dos minutos."); el.classList.add("thinking"); setBusy(true);
     try {
       const list = await requestProposals(value);
       const p = list?.find((x) => x.origen === "usuario" && x.estado === "nueva");
       el.classList.remove("thinking");
-      el.textContent = p ? `En el catálogo oficial encaja «${p.asignatura}» (${p.titulacion}, ${p.universidad}, ${fmtN(p.ects)} ECTS). Con lo que has documentado, cubres un ${p.encaje} % de sus resultados de aprendizaje. ${p.motivo}${p.siguientes_pasos?.[0] ? "\n\nPrimer paso: " + p.siguientes_pasos[0] : ""}${lastNoMatch ? "\n\n" + lastNoMatch : ""}` : `${lastNoMatch || "No he encontrado esa asignatura en el catálogo oficial de Lumen."} Puedes pedir a la coordinación que la añada desde «Acreditación».`;
+      el.textContent = p ? `Encaja «${p.asignatura}» (${p.titulacion}, ${p.universidad}, ${fmtN(p.ects)} ECTS)${p.convenio ? ", una universidad con convenio con Lumen" : ", una asignatura real de un título oficial; esa universidad aún no tiene convenio con Lumen"}. Con lo que has documentado, cubres un ${p.encaje} % de sus resultados de aprendizaje. ${p.motivo}${p.siguientes_pasos?.[0] ? "\n\nPrimer paso: " + p.siguientes_pasos[0] : ""}${lastNoMatch ? "\n\n" + lastNoMatch : ""}` : `${lastNoMatch || "No he encontrado esa asignatura en el catálogo oficial de Lumen."} Puedes pedir a la coordinación que la añada desde «Acreditación».`;
       stage = "done"; setPhase(); choices(["Ver propuestas de acreditación", "Documentar otra cosa"]);
     } catch (e) {
       el.classList.remove("thinking"); el.textContent = e.message + " Puedes definir el objetivo a mano en «Acreditación».";
@@ -1239,6 +1239,7 @@ function progressHtml(obj, evs, { compact = false } = {}) {
     ${compact ? "" : `<ul class="ra-list">${p.sts.map(({ r, s }) => `<li><b>${safe(r.id)}</b><span>${safe(r.texto)}</span><span class="pill ${s.cls}">${s.n}/5</span></li>`).join("")}</ul>`}
   </div>`;
 }
+const convenioPill = (estado) => estado === "publicada" ? '<span class="pill ok">Con convenio Lumen</span>' : estado === "detectada" ? '<span class="pill warn" title="Asignatura real de un título oficial. Lumen gestionará el acuerdo con la universidad.">Sin convenio todavía</span>' : "";
 function subjectFacts(o) {
   return [o.nivel, o.ects && fmtN(o.ects) + " ECTS", o.caracter, o.curso_academico && "Curso " + o.curso_academico, o.codigo_asignatura && "Código " + o.codigo_asignatura, o.codigo_ruct && "RUCT " + o.codigo_ruct].filter(Boolean).map((x) => `<span class="pill">${safe(x)}</span>`).join("");
 }
@@ -1252,17 +1253,18 @@ function renderMiAcreditacion() {
     <div class="subject">
       <div class="subject-head"><div style="min-width:0"><b>${safe(objetivo.asignatura)}</b><small class="subtle">${safe(objetivo.titulacion)} · ${safe(objetivo.universidad)}</small></div>
         <a class="btn small" href="${safe(objetivo.fuente_url)}" target="_blank" rel="noopener">Guía docente oficial ↗</a></div>
-      <div class="facts">${subjectFacts(objetivo)}</div>
+      <div class="facts">${convenioPill(objetivo.estado)}${subjectFacts(objetivo)}</div>
+      ${objetivo.estado === "detectada" ? '<p class="note">Es una asignatura real de un título oficial, pero esta universidad aún no tiene convenio con Lumen. Lumen gestionará el acuerdo; mientras tanto, todo lo que documentes ya cuenta para tu expediente.</p>' : ""}
       ${objetivo.estado === "retirada" ? '<p class="falta">La coordinación ha retirado esta asignatura del catálogo. Elige otra o consulta con la coordinación.</p>' : ""}
       ${progressHtml(objetivo, evidences)}
     </div>`;
 }
 function renderCatalog() {
   const q = normalize($("catSearch").value.trim());
-  const list = catalogo.filter((a) => a.estado === "publicada" && (!q || normalize(`${a.asignatura} ${a.titulacion} ${a.universidad} ${a.codigo_asignatura}`).includes(q)));
+  const list = catalogo.filter((a) => ["publicada", "detectada"].includes(a.estado) && (!q || normalize(`${a.asignatura} ${a.titulacion} ${a.universidad} ${a.codigo_asignatura}`).includes(q)));
   $("catList").innerHTML = list.length ? list.slice(0, 50).map((a) => `<div class="cat-row"><div style="min-width:0"><b>${safe(a.asignatura)}</b><small>${safe(a.titulacion)} · ${safe(a.universidad)} · ${fmtN(Number(a.ects))} ECTS · ${a.resultados.length} resultados de aprendizaje</small></div>
-    <div class="row-actions" style="margin-top:0"><a class="btn small" href="${safe(a.fuente_url)}" target="_blank" rel="noopener">Guía ↗</a>${objetivo.asignatura_id === a.id ? '<span class="pill ok">Tu acreditación</span>' : `<button class="btn small accent" data-choose="${safe(a.id)}">Elegir</button>`}</div></div>`).join("")
-    : `<div class="empty">${catalogo.some((a) => a.estado === "publicada") ? "Ninguna asignatura coincide con la búsqueda." : "El catálogo todavía está vacío. La coordinación del piloto añadirá las asignaturas disponibles."}</div>`;
+    <div class="row-actions" style="margin-top:0">${convenioPill(a.estado)}<a class="btn small" href="${safe(a.fuente_url)}" target="_blank" rel="noopener">Guía ↗</a>${objetivo.asignatura_id === a.id ? '<span class="pill ok">Tu acreditación</span>' : `<button class="btn small accent" data-choose="${safe(a.id)}">Elegir</button>`}</div></div>`).join("")
+    : `<div class="empty">${catalogo.some((a) => ["publicada", "detectada"].includes(a.estado)) ? "Ninguna asignatura coincide con la búsqueda." : "Todavía no hay asignaturas aquí. Di arriba qué quieres acreditar o pulsa «Que Lumen proponga con mis evidencias»: Lumen las buscará en las universidades."}</div>`;
 }
 $("catSearch").addEventListener("input", renderCatalog);
 /** Sets an official subject as the target and re-links every evidence to its outcomes. */
@@ -1312,6 +1314,7 @@ async function requestProposals(intencion) {
     const { propuestas: list, sin_coincidencia } = await (await api("/api/analyze", { kind: "propose", intencion: intencion || "" })).json();
     perfil.propuestas = list;
     lastNoMatch = sin_coincidencia || "";
+    await loadCatalog().catch(() => {});
     perfil.propuestas_n_evidencias = evidences.length;
     render();
     return list;
@@ -1332,7 +1335,8 @@ async function maybeAutoPropose() {
 }
 async function adoptProposal(id) {
   const p = propuestas().find((x) => x.id === id); if (!p) return;
-  const a = catalogo.find((x) => x.id === p.asignatura_id && x.estado === "publicada");
+  if (!catalogo.some((x) => x.id === p.asignatura_id)) await loadCatalog();
+  const a = catalogo.find((x) => x.id === p.asignatura_id && ["publicada", "detectada"].includes(x.estado));
   if (!a) throw new Error("Esa asignatura ya no está en el catálogo.");
   const list = propuestas().map((x) => ({ ...x, estado: x.id === id ? "adoptada" : x.estado === "adoptada" ? "nueva" : x.estado }));
   await updatePerfil({ propuestas: list });
@@ -1354,7 +1358,7 @@ function renderProposals() {
     const covered = (p.cobertura || []).filter((c) => c.evidencias.length).length;
     return `<article class="prop${p.estado === "adoptada" ? " adoptada" : ""}">
       <div class="prop-head"><div style="min-width:0"><b>${safe(p.asignatura)}</b><small class="subtle">${safe(p.titulacion)} · ${safe(p.universidad)}${p.ects ? " · " + fmtN(p.ects) + " ECTS" : ""} · <a href="${safe(p.fuente_url)}" target="_blank" rel="noopener">guía docente oficial</a></small></div>
-        <span class="pill ${p.estado === "adoptada" ? "ok" : p.origen === "usuario" ? "" : "warn"}">${p.estado === "adoptada" ? "Objetivo activo" : p.origen === "usuario" ? "Lo que pediste" : "Propuesta de Lumen"}</span></div>
+        <span class="facts">${p.convenio ? '<span class="pill ok">Con convenio Lumen</span>' : '<span class="pill warn">Sin convenio todavía</span>'}<span class="pill">${p.estado === "adoptada" ? "Tu acreditación" : p.origen === "usuario" ? "Lo que pediste" : "Propuesta de Lumen"}</span></span></div>
       ${p.intencion ? `<p class="subtle">Pediste: «${safe(p.intencion)}»</p>` : ""}
       <div class="fit"><strong>${p.encaje} %</strong><div><span class="track" style="display:block"><span class="fill${p.encaje >= 70 ? " ok" : ""}" style="display:block;width:${p.encaje}%"></span></span>de encaje · ${covered} de ${p.resultados.length} resultados con evidencias</div></div>
       <p>${safe(p.motivo)}</p>
@@ -1377,7 +1381,7 @@ $("propList").addEventListener("click", async (ev) => {
 async function runProposal(intencion, btn) {
   const msg = $("intentMsg"), label = btn.textContent;
   if (!aiOk) { msg.textContent = "La IA no está disponible ahora mismo."; return; }
-  btn.disabled = true; btn.textContent = "Analizando tus evidencias…"; msg.textContent = "";
+  btn.disabled = true; btn.textContent = "Buscando en las universidades…"; msg.textContent = "Si no hay convenios que encajen, Lumen busca asignaturas reales en universidades españolas. Puede tardar uno o dos minutos.";
   try {
     const list = await requestProposals(intencion);
     msg.textContent = lastNoMatch || (list?.length ? "Propuestas actualizadas." : "No he encontrado asignaturas del catálogo que encajen.");
@@ -1443,6 +1447,7 @@ function render() {
   renderMiAcreditacion();
   renderProposals();
   renderTrayectoria();
+  renderCatalog();
 }
 function kpisHtml(obj, evs) {
   const sts = obj.resultados.map((r) => outcomeStatus(r, evs)), ready = sts.filter((s) => s.n === 5).length, h = totalHours(evs), [e1, e2] = ectsRange(h);
@@ -1640,9 +1645,9 @@ async function loadCoordCatalog() {
   renderCoordCatalog();
 }
 function renderCoordCatalog() {
-  const label = { publicada: ["ok", "Publicada"], borrador: ["warn", "Borrador"], retirada: ["", "Retirada"] };
+  const label = { publicada: ["ok", "Con convenio"], detectada: ["warn", "Detectada, sin convenio"], borrador: ["", "Borrador"], retirada: ["", "Retirada"] };
   $("catAdmin").innerHTML = catalogo.length ? catalogo.map((a) => `<div class="cat-row"><div style="min-width:0"><b>${safe(a.asignatura)}</b><small>${safe(a.titulacion)} · ${safe(a.universidad)} · ${fmtN(Number(a.ects))} ECTS · ${a.resultados.length} RA · <a href="${safe(a.fuente_url)}" target="_blank" rel="noopener">fuente</a></small></div>
-    <div class="row-actions" style="margin-top:0"><span class="pill ${label[a.estado][0]}">${label[a.estado][1]}</span><button class="btn small" data-cat="edit" data-id="${safe(a.id)}">Editar</button>${a.estado === "publicada" ? `<button class="btn small" data-cat="retirada" data-id="${safe(a.id)}">Retirar</button>` : `<button class="btn small accent" data-cat="publicada" data-id="${safe(a.id)}">Publicar</button>`}</div></div>`).join("")
+    <div class="row-actions" style="margin-top:0"><span class="pill ${label[a.estado][0]}">${label[a.estado][1]}</span><button class="btn small" data-cat="edit" data-id="${safe(a.id)}">Editar</button>${a.estado === "publicada" ? `<button class="btn small" data-cat="retirada" data-id="${safe(a.id)}">Retirar</button>` : `<button class="btn small accent" data-cat="publicada" data-id="${safe(a.id)}">${a.estado === "detectada" ? "Firmado: marcar con convenio" : "Publicar con convenio"}</button>${a.estado === "detectada" ? `<button class="btn small" data-cat="retirada" data-id="${safe(a.id)}">Retirar</button>` : ""}`}</div></div>`).join("")
     : '<div class="empty">El catálogo está vacío. Añade la primera asignatura con la URL de su guía docente.</div>';
   const pend = solicitudes.filter((x) => x.estado === "pendiente");
   $("reqList").innerHTML = pend.length ? pend.map((x) => `<div class="cat-row"><div style="min-width:0"><b>${safe(x.texto)}</b><small>${safe(fmtDate(x.created_at.slice(0, 10)))}${x.url ? ` · <a href="${safe(x.url)}" target="_blank" rel="noopener">guía propuesta</a>` : ""}</small></div>
@@ -1760,6 +1765,7 @@ table{width:100%;border-collapse:collapse;font-size:13px;margin:12px 0}th,td{bor
 <p class="meta">Generado con Lumen el ${new Date().toLocaleDateString("es-ES")}</p>
 <h2>1. Solicitud</h2>
 <table><tr><th>Solicitante</th><td>${safe(nombre || "—")}</td></tr><tr><th>Universidad</th><td>${safe(obj.universidad || "—")}</td></tr><tr><th>Titulación</th><td>${safe(obj.titulacion || "—")}</td></tr><tr><th>Código RUCT del título</th><td>${safe(obj.codigo_ruct || "—")}</td></tr><tr><th>Asignatura</th><td>${safe(obj.asignatura || "—")}${obj.codigo_asignatura ? " (código " + safe(obj.codigo_asignatura) + ")" : ""}${obj.ects ? " · " + safe(fmtN(Number(obj.ects))) + " ECTS" : ""}${obj.caracter ? " · " + safe(obj.caracter) : ""}${obj.curso_academico ? " · curso " + safe(obj.curso_academico) : ""}</td></tr>
+<tr><th>Convenio con Lumen</th><td>${obj.estado === "publicada" ? "Sí" : obj.estado === "detectada" ? "Todavía no (asignatura real de un título oficial; Lumen gestiona el acuerdo)" : "—"}</td></tr>
 <tr><th>Guía docente oficial</th><td>${obj.fuente_url ? `<a href="${safe(obj.fuente_url)}">${safe(obj.fuente_url)}</a>` : "—"}</td></tr>
 <tr><th>Progreso</th><td>${obj.resultados.length ? `${progressOf(obj, evs).pct} % (${progressOf(obj, evs).ready} de ${obj.resultados.length} resultados de aprendizaje listos para presentar)` : "—"}</td></tr>
 <tr><th>Horas documentadas</th><td>${fmtN(h)} h (equivalencia orientativa: ${fmtN(e1)}–${fmtN(e2)} ECTS, a 25–30 h por crédito)</td></tr></table>

@@ -175,13 +175,13 @@
       <div class="full" id="miAcreditacion"></div>
       <div class="full">
         <h2>¿Qué quieres acreditar?</h2>
-        <p class="note">Dilo con tus palabras: una asignatura, una titulación o una competencia. Lumen buscará en el catálogo oficial las asignaturas que encajan y te dirá cuánto cubren ya tus evidencias.</p>
+        <p class="note">Dilo con tus palabras: una asignatura, una titulación o una competencia. Lumen buscará asignaturas reales de títulos oficiales que encajen (primero en universidades con convenio con Lumen y, si no, en el resto de universidades españolas) y te dirá cuánto cubren ya tus evidencias.</p>
         <form class="form" id="intentForm" style="max-width:860px">
           <label class="field">Lo que quiero acreditar
             <textarea id="intentText" style="min-height:70px" placeholder="Ej.: Quiero que me reconozcan la asignatura de marketing digital del grado en ADE."></textarea>
           </label>
           <div class="row-actions">
-            <button class="btn primary" type="submit" id="intentBtn">Buscar en el catálogo</button>
+            <button class="btn primary" type="submit" id="intentBtn">Buscar en las universidades</button>
             <button class="btn" type="button" id="discoverBtn">Que Lumen proponga con mis evidencias</button>
             <span class="toast" id="intentMsg" aria-live="polite"></span>
           </div>
@@ -189,12 +189,12 @@
       </div>
       <div class="full" id="propSection">
         <h2>Propuestas de acreditación</h2>
-        <p class="note">Lumen revisa tus evidencias cada vez que añades varias nuevas y te propone asignaturas del catálogo oficial donde pueden contar. Todas son asignaturas reales, con los resultados de aprendizaje de su guía docente.</p>
+        <p class="note">Lumen revisa tus evidencias cada vez que añades varias nuevas y te propone asignaturas donde pueden contar. Todas son asignaturas reales de títulos oficiales, con los resultados de aprendizaje de su guía docente.</p>
         <div class="items" id="propList"></div>
       </div>
       <div class="full">
-        <h2>Catálogo oficial</h2>
-        <p class="note">Asignaturas reales de títulos universitarios oficiales, dadas de alta por la coordinación del piloto a partir de su guía docente. Elige una para empezar a reunir evidencias para ella.</p>
+        <h2>Asignaturas disponibles</h2>
+        <p class="note">Asignaturas reales de títulos universitarios oficiales: las de universidades con convenio con Lumen y las que Lumen ha encontrado para los participantes. Elige una para reunir evidencias para ella.</p>
         <label class="field" style="max-width:560px">Buscar por asignatura, titulación o universidad<input id="catSearch" type="search" autocomplete="off" placeholder="Ej.: marketing, ADE, Deusto…"></label>
         <div class="items" id="catList"></div>
         <details class="more" style="max-width:860px">
@@ -249,8 +249,8 @@
         <div class="items readonly" id="coordEvidences"></div>
       </div>
       <div class="full">
-        <h2>Catálogo oficial de asignaturas</h2>
-        <p class="note">Solo se puede acreditar contra asignaturas de este catálogo. Para añadir una, pega la URL de su guía docente oficial: Lumen copia sus datos y sus resultados de aprendizaje literalmente. Revísalos con la guía antes de publicar.</p>
+        <h2>Catálogo y convenios</h2>
+        <p class="note">Aquí están las asignaturas con convenio y las que Lumen ha detectado en universidades sin convenio porque las buscan los participantes: estas últimas indican con qué universidades conviene negociar. Al firmar un convenio, revisa la asignatura con su guía docente y márcala «con convenio». También puedes añadir asignaturas pegando la URL de su guía docente oficial.</p>
         <form class="form" id="guideForm" style="max-width:860px">
           <label class="field">URL oficial de la guía docente<input id="gUrl" type="url" required placeholder="https://www.universidad.es/…/guia-docente.pdf"></label>
           <details class="more">

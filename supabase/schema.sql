@@ -185,6 +185,16 @@ drop policy if exists "solicitudes: gestionar" on public.solicitudes_catalogo;
 create policy "solicitudes: gestionar" on public.solicitudes_catalogo for update to authenticated
   using (public.es_coordinador()) with check (public.es_coordinador());
 
+-- Asignaturas detectadas sin convenio (migración 005)
+alter table public.catalogo_asignaturas add constraint catalogo_asignaturas_estado_check
+  check (estado in ('borrador', 'publicada', 'detectada', 'retirada'));
+alter table public.catalogo_asignaturas add column if not exists detectada_por uuid references auth.users (id) on delete set null;
+create unique index if not exists catalogo_fuente_unica on public.catalogo_asignaturas (fuente_url) where estado <> 'retirada';
+
+drop policy if exists "catalogo: leer" on public.catalogo_asignaturas;
+create policy "catalogo: leer" on public.catalogo_asignaturas for select to authenticated
+  using (estado in ('publicada', 'detectada') or public.es_coordinador());
+
 -- ---------------------------------------------------------------------------
 -- Para nombrar a alguien coordinador del piloto (tras su primer inicio de sesión):
 --   update public.perfiles set role = 'coordinador'

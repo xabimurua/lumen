@@ -1,6 +1,6 @@
 // POST /api/analyze — structured analyses: closing an interview, linking a diary entry, extracting outcomes.
 import { adminClient, allowMethods, chargeAiCall, readJson, requireConsentedProfile, requireUser, sendError, HttpError } from "../lib/server.js";
-import { analyzeInterview, extractOutcomes, linkDiary, parseHistory, proposeAccreditations, CONTEXTOS } from "../lib/claude.js";
+import { analyzeInterview, discoverSubjects, extractOutcomes, linkDiary, parseHistory, proposeAccreditations, CONTEXTOS } from "../lib/claude.js";
 import { randomUUID } from "node:crypto";
 import { loadSource } from "../lib/fuente.js";
 
@@ -38,15 +38,35 @@ export default async function handler(req, res) {
       const admin = adminClient();
       const [{ data: rows, error }, { data: catalogo, error: catErr }] = await Promise.all([
         admin.from("evidencias").select("data").eq("user_id", user.id).order("created_at"),
-        admin.from("catalogo_asignaturas").select("id,universidad,titulacion,nivel,asignatura,ects,resultados,fuente_url").eq("estado", "publicada").limit(150),
+        admin.from("catalogo_asignaturas").select("id,universidad,titulacion,nivel,asignatura,ects,resultados,fuente_url,estado").in("estado", ["publicada", "detectada"]).limit(150),
       ]);
       if (error || catErr) throw new HttpError(500, "No se pudieron leer tus evidencias o el catálogo.");
       const evidencias = rows.map((r) => r.data);
       if (!intencion && evidencias.length < 2) throw new HttpError(400, "Documenta al menos dos aprendizajes para que Lumen pueda proponerte acreditaciones.");
-      if (!catalogo.length) throw new HttpError(409, "Todavía no hay asignaturas en el catálogo oficial de Lumen. La coordinación tiene que añadirlas.");
       await chargeAiCall(user.id);
       const origen = intencion ? "usuario" : "lumen";
-      const out = await proposeAccreditations({ intencion, evidencias, catalogo });
+      let out = await proposeAccreditations({ intencion, evidencias, catalogo });
+
+      // Nothing in the catalog fits (or the person asked for something it lacks): find real subjects at
+      // Spanish universities, store them as "detectada" for Lumen's team, and propose from them.
+      if (!out.propuestas.length || (intencion && out.sin_coincidencia) || body.ampliar === true) {
+        await chargeAiCall(user.id);
+        const encontradas = await discoverSubjects({ intencion, evidencias });
+        const conocidas = new Map(catalogo.map((c) => [c.fuente_url, c]));
+        const nuevas = [];
+        for (const a of encontradas) {
+          if (conocidas.has(a.fuente_url)) { nuevas.push(conocidas.get(a.fuente_url)); continue; }
+          const row = { ...a, resultados: a.resultados.map((t, i) => ({ id: "RA" + (i + 1), texto: t })), estado: "detectada", detectada_por: user.id, created_by: null };
+          const { data: ins, error: insErr } = await admin.from("catalogo_asignaturas").insert(row).select("id,universidad,titulacion,nivel,asignatura,ects,resultados,fuente_url,estado").single();
+          if (!insErr && ins) nuevas.push(ins);
+        }
+        if (nuevas.length) {
+          await chargeAiCall(user.id);
+          const extra = await proposeAccreditations({ intencion, evidencias, catalogo: nuevas });
+          const ya = new Set(out.propuestas.map((p) => p.asignatura_id));
+          out = { propuestas: [...out.propuestas, ...extra.propuestas.filter((p) => !ya.has(p.asignatura_id))].slice(0, 4), sin_coincidencia: extra.propuestas.length ? "" : out.sin_coincidencia || extra.sin_coincidencia };
+        }
+      }
       const nuevas = out.propuestas.map((p) => ({ ...p, id: randomUUID(), creada: new Date().toISOString(), origen, intencion, estado: "nueva" }));
       const anteriores = (perfil.propuestas || []).filter((p) => p.asignatura_id && (p.estado === "adoptada" || (p.estado === "nueva" && p.origen !== origen)));
       const propuestas = [...nuevas, ...anteriores].slice(0, 8);
