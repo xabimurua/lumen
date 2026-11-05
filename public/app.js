@@ -37,7 +37,7 @@ function showScreen(name) {
 async function boot() {
   try {
     const cfg = await fetch("/api/config").then((r) => { if (!r.ok) throw new Error(); return r.json(); });
-    sb = supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey, { auth: { persistSession: true, detectSessionInUrl: true, flowType: "pkce" } });
+    sb = supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey, { auth: { persistSession: true, detectSessionInUrl: true, flowType: "implicit" } });
   } catch {
     $("loadingMsg").textContent = "Lumen no está disponible en este momento. Inténtalo de nuevo en unos minutos.";
     return;
