@@ -532,6 +532,7 @@ async function setObjective(a, cobertura) {
     if (JSON.stringify(next) !== JSON.stringify(e.resultados || [])) await saveEvidence({ ...structuredClone(e), resultados: next });
   }
   render();
+  if (perfil.recursos?.asignatura_id !== a.id) requestResources();
 }
 $("catList").addEventListener("click", async (ev) => {
   const b = ev.target.closest("[data-choose]"); if (!b) return;
@@ -691,6 +692,7 @@ function render() {
   $("dossierKpis").innerHTML = kpisHtml(objetivo, evidences);
   $("dossierMatrix").innerHTML = matrixHtml(objetivo, evidences);
   renderMiAcreditacion();
+  renderResources();
   renderProposals();
   renderTrayectoria();
   renderCatalog();
@@ -1051,6 +1053,60 @@ $("consentForm").addEventListener("submit", async (ev) => {
     if ($("cTray").checked) pendingTrace = { nombre: $("cName").value.trim(), pistas: $("cPistas").value.trim() };
     route();
   } catch { $("consentError").textContent = "No se pudo guardar. Inténtalo de nuevo."; }
+});
+
+/* ================= Learning resources ================= */
+const ICONO_RECURSO = { Libro: "📖", "Vídeo": "🎬", "Artículo": "📰", "Pódcast": "🎧", Curso: "🎓" };
+let recommending = false;
+/** Outcomes that still need evidence, weakest first. */
+const pendingOutcomes = () => objetivo.resultados.map((r) => ({ r, n: outcomeStatus(r, evidences).n })).filter((x) => x.n < 5).sort((a, b) => a.n - b.n).map((x) => x.r.id).slice(0, 6);
+async function requestResources() {
+  if (recommending || objetivo.sinObjetivo || !aiOk) return;
+  const pend = pendingOutcomes();
+  if (!pend.length) { $("recMsg").textContent = "Ya tienes todos los resultados de aprendizaje listos."; return; }
+  recommending = true;
+  const btn = $("recBtn"); btn.disabled = true; btn.textContent = "Buscando recursos…";
+  $("recMsg").textContent = "Lumen está buscando libros, vídeos, artículos y pódcast reales. Tarda uno o dos minutos.";
+  try {
+    const r = await (await api("/api/recursos", { resultados: pend })).json();
+    perfil.recursos = r.recursos;
+    $("recMsg").textContent = r.nuevos ? `${r.nuevos} recursos nuevos.` : "No he encontrado recursos nuevos. Vuelve a intentarlo más tarde.";
+    renderResources();
+  } catch (e) { aiProblem(e); $("recMsg").textContent = e.message; }
+  finally { recommending = false; btn.disabled = false; btn.textContent = "Recomiéndame recursos"; }
+}
+function renderResources() {
+  $("recSection").hidden = objetivo.sinObjetivo;
+  if (objetivo.sinObjetivo) return;
+  const rec = perfil.recursos?.asignatura_id === objetivo.asignatura_id ? perfil.recursos.items || [] : [];
+  const vivos = rec.filter((x) => x.estado !== "descartado");
+  if (!vivos.length) { $("recList").innerHTML = recommending ? "" : '<div class="empty">Pulsa «Recomiéndame recursos» y Lumen buscará material para lo que te falta.</div>'; return; }
+  $("recList").innerHTML = objetivo.resultados.filter((r) => vivos.some((x) => x.resultado_id === r.id)).map((r) => {
+    const s = outcomeStatus(r, evidences);
+    return `<div class="rec-group"><h3><b>${safe(r.id)}</b> ${safe(r.texto)} <span class="pill ${s.cls}">${s.n}/5</span></h3>
+      ${vivos.filter((x) => x.resultado_id === r.id).map((x) => {
+        let host = ""; try { host = new URL(x.url).hostname.replace(/^www\./, ""); } catch {}
+        return `<div class="rec${x.estado === "usado" ? " usado" : ""}"><span class="rec-icon" aria-hidden="true">${ICONO_RECURSO[x.tipo] || "📄"}</span>
+          <div style="min-width:0"><a href="${safe(x.url)}" target="_blank" rel="noopener"><b>${safe(x.titulo)}</b></a>
+            <small class="subtle">${safe(x.tipo)}${x.autor ? " · " + safe(x.autor) : ""}${x.idioma ? " · " + safe(x.idioma) : ""}${x.duracion ? " · " + safe(x.duracion) : ""} · ${safe(host)}</small>
+            <p>${safe(x.por_que)}</p><p class="subtle">Para convertirlo en evidencia: ${safe(x.como_evidencia)}</p>
+            <div class="row-actions" style="margin-top:6px">${x.estado === "usado" ? '<span class="pill ok">Documentado</span>' : `<button class="btn small accent" data-rec="usar" data-id="${safe(x.id)}">Ya lo he visto: documentarlo</button><button class="btn small" data-rec="descartar" data-id="${safe(x.id)}">No me interesa</button>`}</div></div></div>`;
+      }).join("")}</div>`;
+  }).join("");
+}
+$("recBtn").onclick = requestResources;
+$("recList").addEventListener("click", async (ev) => {
+  const b = ev.target.closest("[data-rec]"); if (!b) return;
+  const rec = perfil.recursos, x = rec?.items?.find((i) => i.id === b.dataset.id); if (!x) return;
+  const items = rec.items.map((i) => (i.id === x.id ? { ...i, estado: b.dataset.rec === "usar" ? "usado" : "descartado" } : i));
+  updatePerfil({ recursos: { ...rec, items } }).then(renderResources).catch(() => {});
+  if (b.dataset.rec === "usar") {
+    show("agente"); if (busy) return;
+    document.querySelectorAll(".choices").forEach((c) => c.remove());
+    newDraft(); draft.titulo = x.titulo;
+    bubble(`He ${x.tipo === "Libro" ? "leído" : x.tipo === "Pódcast" ? "escuchado" : "visto"} «${x.titulo}» y quiero documentar lo que aprendí. ${x.url}`, "user");
+    await startTopic(`He ${x.tipo === "Libro" ? "leído" : x.tipo === "Pódcast" ? "escuchado" : "visto"} «${x.titulo}»${x.autor ? " de " + x.autor : ""}, recomendado para el resultado de aprendizaje ${x.resultado_id} (${objetivo.resultados.find((r) => r.id === x.resultado_id)?.texto || ""}). ${x.url}`);
+  }
 });
 
 /* ================= Public track record ================= */

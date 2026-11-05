@@ -9,6 +9,7 @@ Plataforma para convertir lo que una persona aprende en su día a día (trabajo,
 - **Propuestas de acreditación**: la persona dice qué quiere acreditar, o Lumen analiza sus evidencias cada pocas entradas y le propone asignaturas del catálogo, con el porcentaje cubierto y los siguientes pasos.
 - **Progreso como en un curso**: avance por resultado de aprendizaje y horas documentadas frente a la carga de trabajo de los ECTS de la asignatura.
 - **Trayectoria pública**: si la persona lo pide y lo autoriza, Lumen busca en internet su histórico (trabajos, proyectos, publicaciones, premios…) y le propone cada experiencia con sus fuentes; solo entra en el expediente lo que confirma.
+- **Recursos recomendados**: libros, vídeos de YouTube, artículos, pódcast de Spotify y cursos reales para los resultados de aprendizaje que faltan; al terminar uno, Lumen entrevista a la persona sobre lo aprendido.
 - **Pruebas desde cualquier sitio**: archivos, enlaces externos y Google Drive (solo los archivos elegidos). Lumen revisa cada prueba: qué es, qué resultados respalda e indicios de autoría.
 - **Expediente** descargable para presentar a la universidad.
 - **Coordinación del piloto**: vista de solo lectura de los expedientes que cada participante decide compartir.

@@ -24,6 +24,9 @@
     },
     "api/trayectoria.js": {
       "maxDuration": 300
+    },
+    "api/recursos.js": {
+      "maxDuration": 300
     }
   },
   "headers": [

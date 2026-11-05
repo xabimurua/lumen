@@ -215,3 +215,11 @@ a{color:var(--accent)}
 .lecturas{margin:10px 0 0;padding:10px 12px 10px 28px;background:var(--tint);border-radius:10px;font-size:13px;display:grid;gap:4px}
 .lecturas li:first-child{list-style:none;margin-left:-16px;font-size:11px;letter-spacing:1px;text-transform:uppercase}
 .link-input{flex:1;min-width:0;border:1px solid var(--line);background:var(--bg);border-radius:10px;padding:8px 10px;font-size:14px;color:var(--ink)}
+/* Learning resources */
+.rec-group{display:grid;gap:8px}
+.rec-group h3{font-size:14px;font-family:var(--font-body);font-weight:400;margin:10px 0 0;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.rec{display:grid;grid-template-columns:32px 1fr;gap:10px;border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.rec.usado{opacity:.75}
+.rec-icon{font-size:22px;line-height:1}
+.rec small{display:block}
+.rec p{margin:6px 0 0;font-size:13px}
