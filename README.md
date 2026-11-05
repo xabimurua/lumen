@@ -8,6 +8,7 @@ Plataforma para convertir lo que una persona aprende en su día a día (trabajo,
 - **Catálogo oficial**: solo se acredita contra asignaturas reales, dadas de alta por la coordinación a partir de su guía docente oficial, con sus resultados de aprendizaje literales.
 - **Propuestas de acreditación**: la persona dice qué quiere acreditar, o Lumen analiza sus evidencias cada pocas entradas y le propone asignaturas del catálogo, con el porcentaje cubierto y los siguientes pasos.
 - **Progreso como en un curso**: avance por resultado de aprendizaje y horas documentadas frente a la carga de trabajo de los ECTS de la asignatura.
+- **Pruebas desde cualquier sitio**: archivos, enlaces externos y Google Drive (solo los archivos elegidos). Lumen revisa cada prueba: qué es, qué resultados respalda e indicios de autoría.
 - **Expediente** descargable para presentar a la universidad.
 - **Coordinación del piloto**: vista de solo lectura de los expedientes que cada participante decide compartir.
 - **Datos bajo control de cada participante**: consentimiento informado, descarga de datos y borrado de la cuenta.

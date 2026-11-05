@@ -2,21 +2,14 @@
 // and returns the subject's data and learning outcomes for review before publishing.
 import { allowMethods, chargeAiCall, readJson, requireConsentedProfile, requireUser, sendError, HttpError } from "../lib/server.js";
 import { extractSubject } from "../lib/claude.js";
-import { fetchPublic, MAX_CHARS, readableText } from "../lib/web.js";
-
-const MAX_PDF_BYTES = 10 * 1024 * 1024;
+import { MAX_CHARS } from "../lib/web.js";
+import { documentFromUrl } from "../lib/documentos.js";
 
 async function guideDocument(url, texto) {
   if (texto) return { type: "document", title: "Guía docente", source: { type: "text", media_type: "text/plain", data: texto.slice(0, MAX_CHARS) } };
-  const { type, bytes, body } = await fetchPublic(url, "application/pdf,text/html;q=0.9,text/plain;q=0.8");
-  if (/pdf/i.test(type) || bytes.subarray(0, 5).toString() === "%PDF-") {
-    if (bytes.length > MAX_PDF_BYTES) throw new HttpError(413, "El PDF de la guía supera los 10 MB.");
-    return { type: "document", title: "Guía docente", source: { type: "base64", media_type: "application/pdf", data: bytes.toString("base64") } };
-  }
-  if (!/text\/(html|plain)|xhtml/i.test(type)) throw new HttpError(415, "Ese enlace no es una página ni un PDF.");
-  const text = (/html/i.test(type) ? readableText(body) : body).slice(0, MAX_CHARS);
-  if (text.length < 300) throw new HttpError(422, "No he podido leer el texto de esa página. Pega el texto de la guía docente.");
-  return { type: "document", title: "Guía docente", source: { type: "text", media_type: "text/plain", data: text } };
+  const doc = await documentFromUrl(url, "Guía docente");
+  if (doc.type !== "document") throw new HttpError(415, "Ese enlace no es una página ni un PDF.");
+  return doc;
 }
 
 export default async function handler(req, res) {

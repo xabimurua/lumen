@@ -61,6 +61,22 @@ Lumen solo deja acreditar asignaturas reales del catálogo. Antes de abrir el pi
 
 Las peticiones de asignaturas nuevas de los participantes aparecen en esa misma sección, en «Solicitudes de participantes».
 
+## 5 ter. Opcional: conectar Google Drive
+
+Permite a los participantes elegir archivos de su Drive como material o como prueba. Lumen pide el permiso `drive.file`: solo accede a los archivos que cada persona selecciona, nunca al resto de su Drive.
+
+1. En https://console.cloud.google.com crea un proyecto (por ejemplo `Lumen`). En la página de inicio del proyecto, apunta el **Número del proyecto**: es `GOOGLE_APP_ID`.
+2. En **APIs y servicios → Biblioteca**, activa **Google Drive API** y **Google Picker API**.
+3. En **APIs y servicios → Pantalla de consentimiento de OAuth** (o «Google Auth Platform»): tipo **Externo**, nombre `Lumen`, tu correo de contacto. En permisos (*scopes*) añade `.../auth/drive.file`. Publica la aplicación («En producción»): con este permiso no suele hacer falta la verificación de Google.
+4. En **APIs y servicios → Credenciales**:
+   - **Crear credenciales → ID de cliente de OAuth**, tipo «Aplicación web». En **Orígenes de JavaScript autorizados** añade la dirección de Lumen (por ejemplo `https://lumen-lac-eight.vercel.app`). Copia el ID de cliente: es `GOOGLE_CLIENT_ID`.
+   - **Crear credenciales → Clave de API**. Restríngela a **Google Picker API** y, en restricciones de aplicación, a sitios web con la dirección de Lumen seguida de `/*`. Es `GOOGLE_API_KEY`.
+5. Añade las tres variables en Vercel y vuelve a desplegar. Aparecerán los botones 🗂 de Google Drive.
+
+Las carpetas no se comparten enteras: la persona entra en la carpeta y elige los archivos que quiere aportar. Los documentos, hojas y presentaciones de Google se convierten a PDF.
+
+**Gmail no se conecta** a propósito: el permiso para leer el correo es restringido, exige una auditoría de seguridad de Google y daría acceso a todo el buzón. Para aportar un correo (por ejemplo, la confirmación de un responsable), se descarga como `.eml` («Descargar mensaje» en Gmail) o se guarda como PDF y se adjunta: Lumen lo lee igual.
+
 ## 6. Antes de abrir el piloto: lista de comprobación
 
 - [ ] `public/privacidad.html` sin ningún **[PENDIENTE]**, revisada por el delegado o la delegada de protección de datos.

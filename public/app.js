@@ -21,6 +21,7 @@ const fmtN = (n) => (Math.round(n * 10) / 10).toLocaleString("es-ES");
 const byDate = (a, b) => (a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : 0);
 
 /* ================= Session and data ================= */
+let googleCfg = null;
 let sb = null, session = null, perfil = null, objetivo = NO_OBJ, evidences = [], catalogo = [];
 
 function showScreen(name) {
@@ -30,6 +31,7 @@ function showScreen(name) {
 async function boot() {
   try {
     const cfg = await fetch("/api/config").then((r) => { if (!r.ok) throw new Error(); return r.json(); });
+    googleCfg = cfg.google || null;
     sb = supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey, { auth: { persistSession: true, detectSessionInUrl: true, flowType: "implicit" } });
   } catch {
     $("loadingMsg").textContent = "Lumen no está disponible en este momento. Inténtalo de nuevo en unos minutos.";
@@ -451,6 +453,10 @@ $("diaryForm").addEventListener("submit", async (ev) => {
       criterios: { validez: clamp03(link.validez), suficiencia: clamp03(link.suficiencia) }, falta: link.falta || "",
       artefactos, verificacion: { nombre: "", rol: "", contacto: "", estado: "sin solicitar" }, dialogue: [], ai: aiOk,
     });
+    if (artefactos[0]) {
+      const e = evidences.find((x) => x.id === id), lectura = await reviewArtefactAI(e, artefactos[0]);
+      if (lectura) await saveEvidence({ ...structuredClone(e), artefactos: [{ ...artefactos[0], lectura }] });
+    }
     $("dText").value = ""; $("dFile").value = ""; $("dHours").value = "1"; $("dDate").value = today();
     $("dToast").textContent = `Guardado${link.resultados?.length ? " · vinculado a " + link.resultados.join(", ") : ""}`;
     maybeAutoPropose();
@@ -652,6 +658,7 @@ function enterApp() {
   $("whoName").textContent = perfil.nombre || session.user.email;
   $("avatar").textContent = (perfil.nombre || session.user.email).split(/\s+/).map((w) => w[0]).slice(0, 2).join("").toUpperCase();
   $("navCoord").hidden = perfil.role !== "coordinador";
+  $("chatDrive").hidden = !googleCfg;
   $("dDate").value = today();
   render();
   if (!entered) {
@@ -702,12 +709,18 @@ function renderEvidenceList(container, evs, obj, editable) {
     const texts = Object.entries(e.evidencias || {}).map(([k, t]) => `<p><strong>${safe(EV_LABELS[k] || k)}:</strong> ${safe(t)}</p>`).join("");
     const mat = (e.material ? `<button class="pill" data-act="open" data-path="${safe(e.material.path)}" title="Contenido del que aprendió">📄 ${safe(e.material.name)}</button>` : "")
       + (e.contexto ? `<button class="pill" data-act="open" data-path="${safe(e.contexto.path)}" title="Información buscada en internet durante la entrevista">🔎 Contexto de internet</button>` : "");
-    const arts = mat + (e.artefactos || []).map((a) => `<button class="pill" data-act="open" data-path="${safe(a.path)}">📎 ${safe(a.name)}</button>`).join("");
+    const arts = mat + (e.artefactos || []).map((a) => a.url
+      ? `<a class="pill" href="${safe(a.url)}" target="_blank" rel="noopener">🔗 ${safe(a.name)}</a>`
+      : `<button class="pill" data-act="open" data-path="${safe(a.path)}">${a.origen === "drive" ? "🗂" : "📎"} ${safe(a.name)}</button>`).join("");
+    const lecturas = (e.artefactos || []).filter((a) => a.lectura).map((a) => a.lectura.error
+      ? `<li><b>${safe(a.name)}:</b> Lumen no pudo leerlo. ${safe(a.lectura.error)}</li>`
+      : `<li><b>${safe(a.name)}:</b> ${safe(a.lectura.que_es)}${a.lectura.resultados?.length ? ` Respalda ${safe(a.lectura.resultados.join(", "))}.` : ""} <span class="subtle">Autoría: ${safe(a.lectura.autoria)}${a.lectura.notas ? " · " + safe(a.lectura.notas) : ""}</span></li>`).join("");
     const verif = !editable && v.nombre ? `<p><strong>Confirmación:</strong> ${safe(v.nombre)}${v.rol ? " (" + safe(v.rol) + ")" : ""}${v.contacto ? " · " + safe(v.contacto) : ""} · ${safe(v.estado)}</p>` : "";
     const id = safe(e.id);
     return `<article class="card">
       <div class="card-head"><div style="min-width:0"><b>${safe(e.titulo)}</b><small>${e.tipo === "diario" ? "Diario" : "Entrevista"} · ${safe(fmtDate(e.fecha))}${e.contexto ? " · " + safe(e.contexto) : ""}${e.horas ? " · " + fmtN(num(e.horas)) + " h" : ""}</small></div>${vPill}</div>
       <div class="chips">${raTags}${arts}</div>
+      ${lecturas ? `<ul class="lecturas"><li class="subtle">Revisión de las pruebas por Lumen</li>${lecturas}</ul>` : ""}
       <div class="vasc">${CRIT.map(([k, l]) => `<div>${l} ${s[k]}/3${dots(s[k])}</div>`).join("")}</div>
       ${e.falta ? `<div class="falta">Le falta: ${safe(e.falta)}</div>` : ""}
       <details class="more" data-id="${id}"${open.has(e.id) ? " open" : ""}>
@@ -732,10 +745,16 @@ function renderEvidenceList(container, evs, obj, editable) {
         <div class="row-actions">
           <button class="btn small accent" data-act="save" data-id="${id}">Guardar cambios</button>
           <button class="btn small" data-act="copy" data-id="${id}">Copiar solicitud de confirmación</button>
-          <label class="btn small" for="up-${id}">📎 Adjuntar producto o carta</label>
+          <label class="btn small" for="up-${id}">📎 Adjuntar archivo</label>
           <input type="file" id="up-${id}" data-act="upload" data-id="${id}" style="position:absolute;width:1px;height:1px;opacity:0">
+          <button class="btn small" data-act="link" data-id="${id}">🔗 Añadir enlace</button>
+          ${googleCfg ? `<button class="btn small" data-act="drive" data-id="${id}">🗂 Google Drive</button>` : ""}
           <button class="btn small danger" data-act="del" data-id="${id}">Eliminar</button>
           <span class="toast" id="msg-${id}"></span>
+        </div>
+        <div class="row-actions" id="lk-${id}" hidden>
+          <input class="link-input" id="lkurl-${id}" type="url" placeholder="https://… (web, GitHub, documento publicado, PDF)" aria-label="Enlace a la prueba">
+          <button class="btn small accent" data-act="addlink" data-id="${id}">Añadir</button>
         </div>
         <textarea class="copybox field" id="cb-${id}" hidden readonly></textarea>` : ""}
       </details>
@@ -772,6 +791,24 @@ $("evidenceList").addEventListener("click", async (ev) => {
     n.verificacion = { nombre: $("vn-" + e.id).value.trim(), rol: $("vr-" + e.id).value.trim(), contacto: $("vc-" + e.id).value.trim(), estado: $("vs-" + e.id).value };
     try { await saveEvidence(n); say("Guardado"); } catch (err) { say(err.message); }
   }
+  if (b.dataset.act === "link") { const row = $("lk-" + e.id); row.hidden = !row.hidden; if (!row.hidden) $("lkurl-" + e.id).focus(); return; }
+  if (b.dataset.act === "addlink") {
+    const url = $("lkurl-" + e.id).value.trim();
+    if (!/^https?:\/\/\S+\.\S+/.test(url)) { msg().textContent = "Escribe un enlace completo, que empiece por https://"; return; }
+    let name = url; try { const u = new URL(url); name = u.hostname.replace(/^www\./, "") + u.pathname.replace(/\/$/, ""); } catch {}
+    $("lk-" + e.id).hidden = true;
+    await addArtefact(e.id, { name: name.slice(0, 120), url, origen: "enlace", subidoEl: new Date().toISOString() });
+    return;
+  }
+  if (b.dataset.act === "drive") {
+    b.disabled = true;
+    try {
+      const files = await pickDriveFiles({ multiple: true });
+      for (const f of files) { msg().textContent = `Copiando «${f.name}» desde Drive…`; await addArtefact(e.id, { ...(await uploadFile(f, e.id)), origen: "drive" }); }
+    } catch (err) { msg().textContent = err.message; }
+    finally { b.disabled = false; }
+    return;
+  }
   if (b.dataset.act === "copy") {
     const t = verificationText(e);
     navigator.clipboard.writeText(t).then(() => say("Copiada. Envíala por correo y adjunta la respuesta como prueba.")).catch(() => { const cb = $("cb-" + e.id); cb.hidden = false; cb.value = t; cb.select(); say("Selecciona el texto y cópialo."); });
@@ -787,12 +824,29 @@ $("evidenceList").addEventListener("change", async (ev) => {
   const f = inp.files?.[0], e = evidences.find((x) => x.id === inp.dataset.id); if (!f || !e) return;
   const say = (t) => { const m = $("msg-" + e.id); if (m) m.textContent = t; };
   say("Subiendo…");
-  try {
-    const a = await uploadFile(f, e.id), n = structuredClone(e);
-    n.artefactos = [...(n.artefactos || []), a];
-    await saveEvidence(n); say("Prueba adjuntada");
-  } catch (err) { say(err.message); }
+  try { await addArtefact(e.id, await uploadFile(f, e.id)); } catch (err) { say(err.message); }
 });
+/** Saves a proof on an evidence and asks Lumen to review it against the official learning outcomes. */
+async function addArtefact(evId, a) {
+  const say = (t) => { const m = $("msg-" + evId); if (m) m.textContent = t; };
+  let e = evidences.find((x) => x.id === evId);
+  await saveEvidence({ ...structuredClone(e), artefactos: [...(e.artefactos || []), a] });
+  say("Prueba añadida. Lumen la está revisando…");
+  const lectura = await reviewArtefactAI(e, a);
+  e = evidences.find((x) => x.id === evId);
+  if (!e || !lectura) { say("Prueba añadida."); return; }
+  await saveEvidence({ ...structuredClone(e), artefactos: (e.artefactos || []).map((x) => (x.path === a.path && x.url === a.url && x.name === a.name ? { ...x, lectura } : x)) });
+  say(lectura.error ? "Prueba añadida (Lumen no pudo leerla)." : "Prueba añadida y revisada.");
+}
+async function reviewArtefactAI(e, a) {
+  if (!aiOk) return null;
+  try {
+    return await (await api("/api/artefacto", { path: a.path || "", url: a.url || "", nombre: a.name, evidencia: { titulo: e.titulo, resumen: Object.values(e.evidencias || {}).join(" ") } })).json();
+  } catch (err) {
+    if (err.status === 415 || err.status === 413 || err.status === 422 || err.status === 504) return { error: err.message };
+    aiProblem(err); return null;
+  }
+}
 
 /* ================= Coordination ================= */
 let people = [], selected = null;
@@ -986,8 +1040,58 @@ $("consentForm").addEventListener("submit", async (ev) => {
   } catch { $("consentError").textContent = "No se pudo guardar. Inténtalo de nuevo."; }
 });
 
+/* ================= Google Drive ================= */
+// Uses the Google Picker with the drive.file scope: Lumen only ever sees the files the person picks.
+const loadScript = (src) => new Promise((ok, ko) => { const s = document.createElement("script"); s.src = src; s.onload = ok; s.onerror = () => ko(new Error("No se pudo cargar Google Drive.")); document.head.append(s); });
+let googleReady = null, driveToken = null, driveTokenExp = 0;
+function ensureGoogle() {
+  googleReady ??= Promise.all([loadScript("https://apis.google.com/js/api.js"), loadScript("https://accounts.google.com/gsi/client")])
+    .then(() => new Promise((ok) => gapi.load("picker", ok)));
+  return googleReady;
+}
+function driveAccessToken() {
+  if (driveToken && Date.now() < driveTokenExp) return Promise.resolve(driveToken);
+  return new Promise((ok, ko) => {
+    const client = google.accounts.oauth2.initTokenClient({
+      client_id: googleCfg.clientId, scope: "https://www.googleapis.com/auth/drive.file",
+      callback: (r) => { if (r.error) return ko(new Error("No se pudo conectar con Google Drive.")); driveToken = r.access_token; driveTokenExp = Date.now() + (Number(r.expires_in) - 60) * 1000; ok(driveToken); },
+      error_callback: () => ko(new Error("Se canceló la conexión con Google Drive.")),
+    });
+    client.requestAccessToken({ prompt: driveToken ? "" : "consent" });
+  });
+}
+const GOOGLE_EXPORT = { "application/vnd.google-apps.document": "application/pdf", "application/vnd.google-apps.presentation": "application/pdf", "application/vnd.google-apps.spreadsheet": "application/pdf", "application/vnd.google-apps.drawing": "application/pdf" };
+/** Opens the Drive picker (folders can be browsed; files inside them are selected) and returns the chosen files. */
+async function pickDriveFiles({ multiple = true } = {}) {
+  if (!googleCfg) throw new Error("Google Drive no está configurado.");
+  await ensureGoogle();
+  const token = await driveAccessToken();
+  const docs = await new Promise((ok) => {
+    const view = new google.picker.DocsView(google.picker.ViewId.DOCS).setIncludeFolders(true).setSelectFolderEnabled(false);
+    const builder = new google.picker.PickerBuilder().addView(view).setOAuthToken(token).setDeveloperKey(googleCfg.apiKey).setAppId(googleCfg.appId).setLocale("es")
+      .setTitle("Elige los archivos (entra en las carpetas para verlos)")
+      .setCallback((d) => { if (d.action === google.picker.Action.PICKED) ok(d.docs); else if (d.action === google.picker.Action.CANCEL) ok([]); });
+    if (multiple) builder.enableFeature(google.picker.Feature.MULTISELECT_ENABLED);
+    builder.build().setVisible(true);
+  });
+  const files = [];
+  for (const d of docs.slice(0, 10)) {
+    const exportAs = GOOGLE_EXPORT[d.mimeType];
+    const url = exportAs ? `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(d.id)}/export?mimeType=${encodeURIComponent(exportAs)}` : `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(d.id)}?alt=media`;
+    const r = await fetch(url, { headers: { Authorization: "Bearer " + token } });
+    if (!r.ok) throw new Error(`No se pudo descargar «${d.name}» de Drive${exportAs ? " (los documentos muy grandes no se pueden convertir)" : ""}.`);
+    const blob = await r.blob();
+    files.push(new File([blob], exportAs && !/\.pdf$/i.test(d.name) ? d.name + ".pdf" : d.name, { type: exportAs || blob.type || d.mimeType }));
+  }
+  return files;
+}
+
 /* ================= Composer: attach and dictate ================= */
 $("chatFile").addEventListener("change", (ev) => { const f = ev.target.files?.[0]; ev.target.value = ""; if (f) attachSource(f); });
+$("chatDrive").onclick = async () => {
+  try { const [f] = await pickDriveFiles({ multiple: false }); if (f) attachSource(f); }
+  catch (e) { bubble(e.message); }
+};
 const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 let rec = null;
 if (!Recognition) $("mic").hidden = true;
