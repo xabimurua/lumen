@@ -14,7 +14,7 @@ Necesitas cuatro cuentas: **GitHub**, **Supabase**, **Vercel** y **Anthropic Con
 ## 2. Supabase: base de datos, acceso y archivos
 
 1. En [supabase.com](https://supabase.com), crea un proyecto nuevo. En **Region**, elige una región de la UE (por ejemplo *Central EU (Frankfurt)*). Guarda la contraseña de la base de datos en un lugar seguro.
-2. Abre **SQL Editor → New query**, pega el contenido de `supabase/schema.sql` y pulsa **Run**. Crea las tablas, las reglas de seguridad y el almacén privado `artefactos`. (Si ya lo habías ejecutado con una versión anterior, ejecuta también `supabase/002_propuestas.sql` y `supabase/003_catalogo.sql`, en ese orden.)
+2. Abre **SQL Editor → New query**, pega el contenido de `supabase/schema.sql` y pulsa **Run**. Crea las tablas, las reglas de seguridad y el almacén privado `artefactos`. (Si ya lo habías ejecutado con una versión anterior, ejecuta también `supabase/002_propuestas.sql`, `supabase/003_catalogo.sql` y `supabase/004_trayectoria.sql`, en ese orden.)
 3. En **Authentication → URL Configuration**:
    - **Site URL**: la dirección final de Lumen (por ejemplo `https://lumen.tudominio.es`, o la de Vercel del paso 3).
    - **Redirect URLs**: añade esa misma dirección.

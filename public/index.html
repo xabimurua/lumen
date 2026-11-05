@@ -146,6 +146,20 @@
 
     <!-- EVIDENCIAS -->
     <section id="evidencias" class="view">
+      <div class="full" id="trayectoria">
+        <h2>Tu trayectoria pública</h2>
+        <p class="note">Lumen puede buscar en internet lo que ya has hecho (trabajos, empresas y proyectos, voluntariados, formación, publicaciones, charlas, premios) para convertirlo en evidencias. Tú decides qué es tuyo: nada entra en tu expediente sin que lo confirmes.</p>
+        <form class="form" id="trayForm" style="max-width:860px">
+          <div class="edit-grid">
+            <label class="field">Tu nombre y apellidos<input id="tNombre" required autocomplete="name"></label>
+            <label class="field">Pistas para no confundirte con otras personas<input id="tPistas" placeholder="Ej.: Bilbao, Osoigo, participación ciudadana, Deusto"></label>
+          </div>
+          <label class="field">Enlaces tuyos (opcional, uno por línea): LinkedIn, web, blog, perfiles<textarea id="tEnlaces" style="min-height:70px" placeholder="https://…"></textarea></label>
+          <label class="check"><input type="checkbox" id="tAcepto" required> Autorizo a Lumen a buscar en internet información pública sobre mí para proponerme evidencias. Lo que encuentre se guarda en mi cuenta, puedo descartarlo y borrarlo cuando quiera.</label>
+          <div class="row-actions"><button class="btn primary" type="submit" id="tBuscar">Buscar mi trayectoria</button><span class="toast" id="tMsg" aria-live="polite"></span></div>
+        </form>
+        <div class="items" id="trayList"></div>
+      </div>
       <div class="full">
         <h2>Mis evidencias</h2>
         <p class="note">Cada evidencia se valora con cuatro criterios. <b>Validez</b> y <b>suficiencia</b> las estima Lumen a partir de lo que cuentas. <b>Autenticidad</b> sube cuando adjuntas un producto y cuando alguien confirma tu aprendizaje. <b>Vigencia</b> depende de cuándo ocurrió.</p>

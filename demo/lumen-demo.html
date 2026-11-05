@@ -358,6 +358,20 @@ a{color:var(--accent)}
 
     <!-- EVIDENCIAS -->
     <section id="evidencias" class="view">
+      <div class="full" id="trayectoria">
+        <h2>Tu trayectoria pública</h2>
+        <p class="note">Lumen puede buscar en internet lo que ya has hecho (trabajos, empresas y proyectos, voluntariados, formación, publicaciones, charlas, premios) para convertirlo en evidencias. Tú decides qué es tuyo: nada entra en tu expediente sin que lo confirmes.</p>
+        <form class="form" id="trayForm" style="max-width:860px">
+          <div class="edit-grid">
+            <label class="field">Tu nombre y apellidos<input id="tNombre" required autocomplete="name"></label>
+            <label class="field">Pistas para no confundirte con otras personas<input id="tPistas" placeholder="Ej.: Bilbao, Osoigo, participación ciudadana, Deusto"></label>
+          </div>
+          <label class="field">Enlaces tuyos (opcional, uno por línea): LinkedIn, web, blog, perfiles<textarea id="tEnlaces" style="min-height:70px" placeholder="https://…"></textarea></label>
+          <label class="check"><input type="checkbox" id="tAcepto" required> Autorizo a Lumen a buscar en internet información pública sobre mí para proponerme evidencias. Lo que encuentre se guarda en mi cuenta, puedo descartarlo y borrarlo cuando quiera.</label>
+          <div class="row-actions"><button class="btn primary" type="submit" id="tBuscar">Buscar mi trayectoria</button><span class="toast" id="tMsg" aria-live="polite"></span></div>
+        </form>
+        <div class="items" id="trayList"></div>
+      </div>
       <div class="full">
         <h2>Mis evidencias</h2>
         <p class="note">Cada evidencia se valora con cuatro criterios. <b>Validez</b> y <b>suficiencia</b> las estima Lumen a partir de lo que cuentas. <b>Autenticidad</b> sube cuando adjuntas un producto y cuando alguien confirma tu aprendizaje. <b>Vigencia</b> depende de cuándo ocurrió.</p>
@@ -1054,7 +1068,7 @@ async function readLink(url) {
     const { fuente } = await (await api("/api/fuente", { url, draftId: draft.id })).json();
     draft.material = fuente;
     if (draft.titulo === url) draft.titulo = fuente.name;
-    el.textContent = fuente.leido ? `He leído «${fuente.name}». Te preguntaré a partir de su contenido.`
+    el.textContent = fuente.leido ? `He leído «${fuente.name}»${fuente.articulos ? ` y los ${fuente.articulos} artículos que enlaza` : ""}. Te preguntaré a partir de su contenido.`
       : fuente.tipo === "video" || fuente.tipo === "audio" ? `He identificado «${fuente.name}». No puedo ${fuente.tipo === "video" ? "ver el vídeo" : "escuchar el audio"}, así que te preguntaré a partir de lo que me cuentes.`
       : `No he podido leer el texto de «${fuente.name}» (quizá pide suscripción). Te preguntaré a partir de lo que me cuentes.`;
   } catch (e) {
@@ -1090,6 +1104,7 @@ async function submit(value) {
   document.querySelectorAll(".choices").forEach((x) => x.remove());
   if (stage === "done" && value === "Ver mis evidencias") { show("evidencias"); return; }
   if (value === "Ver propuestas de acreditación") { show("objetivo"); $("propSection").scrollIntoView(); return; }
+  if (value === "Buscar mi trayectoria en internet") { document.querySelectorAll(".choices").forEach((x) => x.remove()); show("evidencias"); $("trayectoria").scrollIntoView(); $("tPistas").focus(); return; }
   bubble(value, "user"); $("answer").value = "";
   if (stage === "start" || stage === "done") {
     if (/^(empezar|documentar)/.test(normalize(value))) { begin(); return; }
@@ -1402,7 +1417,7 @@ function enterApp() {
   if (!entered) {
     entered = true;
     bubble(`Hola${perfil.nombre ? ", " + perfil.nombre.split(" ")[0] : ""}. Te ayudo a convertir lo que aprendes cada día en evidencias que una universidad pueda reconocer.\n\nCuéntame algo que hayas hecho o aprendido y te haré preguntas hasta tener lo que pide un expediente: qué sabes hacer, un caso real, horas, un producto que lo pruebe y alguien que pueda confirmarlo.\n\nSi ya sabes qué quieres acreditar, dímelo. Si no, a medida que documentes te iré proponiendo dónde puede contar lo que sabes.`);
-    choices(["Empezar a documentar"]);
+    choices(perfil.trayectoria?.buscada ? ["Empezar a documentar"] : ["Empezar a documentar", "Buscar mi trayectoria en internet"]);
   }
 }
 
@@ -1423,6 +1438,7 @@ function render() {
   $("dossierMatrix").innerHTML = matrixHtml(objetivo, evidences);
   renderMiAcreditacion();
   renderProposals();
+  renderTrayectoria();
 }
 function kpisHtml(obj, evs) {
   const sts = obj.resultados.map((r) => outcomeStatus(r, evs)), ready = sts.filter((s) => s.n === 5).length, h = totalHours(evs), [e1, e2] = ectsRange(h);
@@ -1456,7 +1472,7 @@ function renderEvidenceList(container, evs, obj, editable) {
     const verif = !editable && v.nombre ? `<p><strong>Confirmación:</strong> ${safe(v.nombre)}${v.rol ? " (" + safe(v.rol) + ")" : ""}${v.contacto ? " · " + safe(v.contacto) : ""} · ${safe(v.estado)}</p>` : "";
     const id = safe(e.id);
     return `<article class="card">
-      <div class="card-head"><div style="min-width:0"><b>${safe(e.titulo)}</b><small>${e.tipo === "diario" ? "Diario" : "Entrevista"} · ${safe(fmtDate(e.fecha))}${e.contexto ? " · " + safe(e.contexto) : ""}${e.horas ? " · " + fmtN(num(e.horas)) + " h" : ""}</small></div>${vPill}</div>
+      <div class="card-head"><div style="min-width:0"><b>${safe(e.titulo)}</b><small>${e.tipo === "diario" ? "Diario" : e.tipo === "trayectoria" ? "Trayectoria pública" : "Entrevista"} · ${safe(fmtDate(e.fecha))}${e.contexto ? " · " + safe(e.contexto) : ""}${e.horas ? " · " + fmtN(num(e.horas)) + " h" : ""}</small></div>${vPill}</div>
       <div class="chips">${raTags}${arts}</div>
       ${lecturas ? `<ul class="lecturas"><li class="subtle">Revisión de las pruebas por Lumen</li>${lecturas}</ul>` : ""}
       <div class="vasc">${CRIT.map(([k, l]) => `<div>${l} ${s[k]}/3${dots(s[k])}</div>`).join("")}</div>
@@ -1776,6 +1792,72 @@ $("consentForm").addEventListener("submit", async (ev) => {
     await updatePerfil({ nombre: $("cName").value.trim(), consentimiento_at: new Date().toISOString(), consentimiento_version: CONSENT_VERSION, compartir_con_coordinacion: $("cShare").checked });
     route();
   } catch { $("consentError").textContent = "No se pudo guardar. Inténtalo de nuevo."; }
+});
+
+/* ================= Public track record ================= */
+const tray = () => perfil?.trayectoria || {};
+const CONTEXTO_DE = { Trabajo: "Trabajo", Emprendimiento: "Trabajo", Proyecto: "Trabajo", "Charla o evento": "Trabajo", Voluntariado: "Voluntariado", "Formación": "Formación no reglada" };
+const fechaDe = (x) => { const f = x.fecha_fin || x.fecha_inicio || ""; return /^\d{4}-\d{2}$/.test(f) ? f + "-15" : /^\d{4}$/.test(f) ? f + "-06-30" : today(); };
+function renderTrayectoria() {
+  const t = tray();
+  if (!$("tNombre").value) $("tNombre").value = t.nombre || perfil.nombre || "";
+  if (!$("tPistas").value && t.pistas) $("tPistas").value = t.pistas;
+  const items = t.items || [];
+  if (!items.length) { $("trayList").innerHTML = t.buscada ? '<div class="empty">No encontré nada fiable sobre ti. Añade pistas o enlaces tuyos y vuelve a buscar.</div>' : ""; return; }
+  const pend = items.filter((x) => x.estado === "pendiente"), conf = items.filter((x) => x.estado === "confirmada"), desc = items.filter((x) => x.estado === "descartada").length;
+  const conf_cls = { alta: "ok", media: "warn", baja: "" };
+  const card = (x) => `<article class="card">
+      <div class="card-head"><div style="min-width:0"><b>${safe(x.titulo)}</b><small>${safe(x.tipo)}${x.organizacion ? " · " + safe(x.organizacion) : ""}${x.rol ? " · " + safe(x.rol) : ""}${x.fecha_inicio || x.fecha_fin ? " · " + safe([x.fecha_inicio, x.fecha_fin].filter(Boolean).join("–")) : ""}</small></div>
+        ${x.estado === "confirmada" ? '<span class="pill ok">Evidencia creada</span>' : `<span class="pill ${conf_cls[x.confianza] || ""}" title="${safe(x.motivo_confianza)}">Confianza ${safe(x.confianza)}</span>`}</div>
+      <p>${safe(x.descripcion)}</p>
+      ${x.estado === "pendiente" ? `<p class="subtle">${safe(x.motivo_confianza)}</p>` : ""}
+      <div class="sources">${x.fuentes.map((f) => { let h = f.url; try { h = new URL(f.url).hostname.replace(/^www\./, ""); } catch {} return `<a href="${safe(f.url)}" target="_blank" rel="noopener">${safe(f.titulo.slice(0, 90))} · ${safe(h)}</a>`; }).join("")}</div>
+      <div class="row-actions">${x.estado === "pendiente"
+        ? `<button class="btn small accent" data-tray="si" data-id="${safe(x.id)}">Es mío: crear evidencia</button><button class="btn small" data-tray="no" data-id="${safe(x.id)}">No soy yo</button>`
+        : `<button class="btn small" data-tray="entrevista" data-id="${safe(x.id)}">Profundizar con una entrevista</button>`}</div>
+    </article>`;
+  $("trayList").innerHTML = (pend.length ? `<h3>Por revisar (${pend.length})</h3>${pend.map(card).join("")}` : "") + (conf.length ? `<h3>Confirmado (${conf.length})</h3>${conf.map(card).join("")}` : "") + (desc ? `<p class="subtle">${desc} descartado${desc > 1 ? "s" : ""} por no ser tuyo${desc > 1 ? "s" : ""}.</p>` : "");
+}
+$("trayForm").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const btn = $("tBuscar"); btn.disabled = true; btn.textContent = "Buscando en internet…";
+  $("tMsg").textContent = "Puede tardar entre uno y tres minutos. No cierres la página.";
+  try {
+    const enlaces = $("tEnlaces").value.split("\n").map((x) => x.trim()).filter(Boolean);
+    const r = await (await api("/api/trayectoria", { nombre: $("tNombre").value.trim(), pistas: $("tPistas").value.trim(), enlaces, acepto: $("tAcepto").checked })).json();
+    perfil.trayectoria = r.trayectoria;
+    $("tMsg").textContent = r.encontrados ? `He encontrado ${r.encontrados} experiencias. Revisa cuáles son tuyas.` : "No he encontrado nada nuevo. Prueba con más pistas o con tus enlaces.";
+    renderTrayectoria();
+  } catch (e) { aiProblem(e); $("tMsg").textContent = e.message; }
+  finally { btn.disabled = false; btn.textContent = "Buscar mi trayectoria"; }
+});
+$("trayList").addEventListener("click", async (ev) => {
+  const b = ev.target.closest("[data-tray]"); if (!b) return;
+  const t = tray(), x = (t.items || []).find((i) => i.id === b.dataset.id); if (!x) return;
+  if (b.dataset.tray === "entrevista") {
+    show("agente"); if (busy) return;
+    newDraft(); bubble(`Quiero profundizar en «${x.titulo}».`, "user");
+    await startTopic(`${x.titulo}${x.organizacion ? " (" + x.organizacion + ")" : ""}. ${x.descripcion}`);
+    return;
+  }
+  b.disabled = true;
+  try {
+    let evId = null;
+    if (b.dataset.tray === "si") {
+      evId = uid();
+      await saveEvidence({
+        id: evId, kind: "evidence", tipo: "trayectoria", titulo: x.titulo, fuente: x.tipo, url: x.fuentes[0]?.url || "", fecha: fechaDe(x), createdAt: Date.now(),
+        contexto: CONTEXTO_DE[x.tipo] || "", horas: 0, resultados: [], evidencias: { texto: [x.rol && `Papel: ${x.rol}.`, x.organizacion && `Organización: ${x.organizacion}.`, x.descripcion].filter(Boolean).join(" ") },
+        criterios: { validez: 1, suficiencia: 1 }, falta: "Haz una entrevista sobre esta experiencia para explicar qué aprendiste, cómo lo aplicaste y cuántas horas le dedicaste.",
+        artefactos: x.fuentes.map((f) => ({ name: f.titulo.slice(0, 120), url: f.url, origen: "internet", subidoEl: new Date().toISOString() })),
+        verificacion: { nombre: "", rol: "", contacto: "", estado: "sin solicitar" }, dialogue: [], ai: true,
+      });
+    }
+    const items = t.items.map((i) => (i.id === x.id ? { ...i, estado: b.dataset.tray === "si" ? "confirmada" : "descartada", evidencia_id: evId } : i));
+    await updatePerfil({ trayectoria: { ...t, items } });
+    renderTrayectoria();
+    if (evId) maybeAutoPropose();
+  } catch (e) { b.disabled = false; $("tMsg").textContent = e.message || "No se pudo guardar."; }
 });
 
 /* ================= Google Drive ================= */

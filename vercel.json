@@ -21,6 +21,9 @@
     },
     "api/artefacto.js": {
       "maxDuration": 90
+    },
+    "api/trayectoria.js": {
+      "maxDuration": 300
     }
   },
   "headers": [
