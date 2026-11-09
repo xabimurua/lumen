@@ -1,6 +1,6 @@
 // POST /api/analyze — structured analyses: closing an interview, linking a diary entry, extracting outcomes.
 import { adminClient, allowMethods, chargeAiCall, readJson, requireConsentedProfile, requireUser, sendError, HttpError } from "../lib/server.js";
-import { analyzeInterview, discoverSubjects, extractOutcomes, linkDiary, parseHistory, proposeAccreditations, CONTEXTOS } from "../lib/claude.js";
+import { analyzeInterview, discoverSubjects, extractOutcomes, linkDiary, parseHistory, proposeAccreditations, quickQuestions, CONTEXTOS } from "../lib/claude.js";
 import { randomUUID } from "node:crypto";
 import { loadSource } from "../lib/fuente.js";
 
@@ -18,6 +18,12 @@ export default async function handler(req, res) {
       await chargeAiCall(user.id);
       const out = await analyzeInterview({ objetivo: perfil.objetivo, titulo: String(body.titulo || "").slice(0, 300), history, today, fuente, contexto });
       return res.status(200).json(out);
+    }
+    if (body.kind === "preguntas") {
+      const titulo = String(body.titulo || "").trim().slice(0, 300);
+      if (!titulo) throw new HttpError(400, "Falta la evidencia.");
+      await chargeAiCall(user.id);
+      return res.status(200).json({ preguntas: await quickQuestions({ objetivo: perfil.objetivo, titulo, resumen: String(body.resumen || "").slice(0, 2000) }) });
     }
     if (body.kind === "diary") {
       const texto = String(body.texto || "").trim().slice(0, 4000);

@@ -6,7 +6,7 @@ const BUCKET = "artefactos";
 const MAX_FILE_BYTES = 25 * 1024 * 1024;
 /** Before choosing an official subject there are no learning outcomes to link evidence to. */
 const NO_OBJ = { universidad: "", titulacion: "", asignatura: "", ects: "", resultados: [], sinObjetivo: true };
-const EV_LABELS = { idea: "Qué aprendió", aplicacion: "Aplicación", argumentacion: "Argumentación", conexion: "Conexión con su experiencia", limites: "Límites y dudas", sintesis: "Síntesis final", texto: "Registro del diario", fidelidad: "Fidelidad al contenido" };
+const EV_LABELS = { idea: "Qué aprendió", aplicacion: "Aplicación", argumentacion: "Argumentación", conexion: "Conexión con su experiencia", limites: "Límites y dudas", sintesis: "Síntesis final", texto: "Registro del diario", fidelidad: "Fidelidad al contenido", logros: "Logros", competencias: "Lo que demuestra" };
 const CRIT = [["validez", "Validez"], ["autenticidad", "Autenticidad"], ["suficiencia", "Suficiencia"], ["vigencia", "Vigencia"]];
 const CONTEXTOS = ["Trabajo", "Voluntariado", "Formación no reglada", "Vida diaria / autodidacta"];
 
@@ -116,7 +116,7 @@ async function saveEvidence(e) {
   if (error) { console.error(error); throw new Error("No se pudo guardar. Revisa tu conexión e inténtalo de nuevo."); }
 }
 async function deleteEvidence(e) {
-  const paths = (e.artefactos || []).map((a) => a.path).filter(Boolean);
+  const paths = (e.artefactos || []).filter((a) => a.origen !== "cv").map((a) => a.path).filter(Boolean); // the CV is shared by many evidences
   if (paths.length) await sb.storage.from(BUCKET).remove(paths);
   const { error } = await sb.from("evidencias").delete().eq("id", e.id);
   if (error) throw new Error("No se pudo eliminar.");
@@ -168,7 +168,7 @@ function aiState(ok, msg) {
 /* ================= Criteria ================= */
 function yearsAgo(fecha) { const t = new Date(fecha + "T12:00:00").getTime(); return isFinite(t) ? (Date.now() - t) / 31557600000 : 99; }
 function autenticidad(e) {
-  const art = (e.artefactos || []).length > 0, conf = e.verificacion?.estado === "confirmada";
+  const art = (e.artefactos || []).some((a) => a.origen !== "cv"), conf = e.verificacion?.estado === "confirmada";
   if (art && conf) return 3; if (conf || art) return 2;
   if (e.contexto && e.fecha && e.horas > 0) return 1; return 0;
 }
@@ -251,7 +251,26 @@ function begin(seed) {
   stage = "type";
   ask("¿Qué quieres hacer hoy? Cuéntame algo que hayas aprendido (una tarea del trabajo, un proyecto, un voluntariado, un curso o algo que resolviste en tu vida diaria), pega el enlace o el título de lo que viste, escuchaste o leíste, o adjunta el material con el clip 📎. También puedes decirme qué te gustaría acreditar.", ["Una tarea de mi trabajo", "Un proyecto que llevé", "Un voluntariado", "Un curso, libro o podcast", "Quiero acreditar algo concreto"]);
 }
-function setBusy(b) { busy = b; $("send").disabled = b; }
+function setBusy(b) { busy = b; $("send").disabled = b; if (!b) persistDraft(); }
+/** An interview in progress survives a reload: it is kept in this browser until it is closed. */
+const draftKey = () => "lumen_entrevista_" + session.user.id;
+function persistDraft() {
+  try {
+    if (draft && (stage === "dialogue" || stage === "review") && draft.history.length) localStorage.setItem(draftKey(), JSON.stringify({ draft, stage, guardado: Date.now() }));
+    else localStorage.removeItem(draftKey());
+  } catch {}
+}
+function restoreDraft() {
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem(draftKey())); } catch {}
+  if (!saved?.draft?.history?.length || Date.now() - saved.guardado > 7 * 864e5) return false;
+  draft = saved.draft; stage = saved.stage;
+  bubble(`Retomamos tu entrevista sobre «${draft.titulo}» donde la dejaste. Si prefieres empezar otra cosa, escribe «empezar de nuevo».`);
+  for (const m of draft.history.slice(-6)) bubble(m.content, m.role === "user" ? "user" : "agent");
+  setPhase();
+  if (draft.history.at(-1).role === "user") agentTurn(draft.history.at(-1).content, { closing: stage === "review" });
+  return true;
+}
 
 async function agentTurn(userText, { closing = false } = {}) {
   const el = bubble("Pensando…"); el.classList.add("thinking"); setPhase(); setBusy(true);
@@ -352,9 +371,9 @@ async function submit(value) {
   document.querySelectorAll(".choices").forEach((x) => x.remove());
   if (stage === "done" && value === "Ver mis evidencias") { show("evidencias"); return; }
   if (value === "Ver propuestas de acreditación") { show("objetivo"); $("propSection").scrollIntoView(); return; }
-  if (value === "Ver mi trayectoria") { document.querySelectorAll(".choices").forEach((x) => x.remove()); show("evidencias"); $("trayectoria").scrollIntoView(); return; }
-  if (value === "Buscar mi trayectoria en internet") { document.querySelectorAll(".choices").forEach((x) => x.remove()); show("evidencias"); $("trayectoria").scrollIntoView(); $("tPistas").focus(); return; }
+  if (value === "Cargar mi experiencia") { show("trayectoria"); return; }
   bubble(value, "user"); $("answer").value = "";
+  if (/^empezar de nuevo\.?$/.test(normalize(value))) { draft = null; stage = "start"; persistDraft(); begin(); return; }
   if (stage === "start" || stage === "done") {
     if (/^(empezar|documentar)/.test(normalize(value))) { begin(); return; }
     begin(value); return;
@@ -576,7 +595,9 @@ async function maybeAutoPropose() {
     const best = list?.find((p) => p.origen === "lumen");
     if (best) {
       bubble(`Mientras documentabas, he revisado tus ${evidences.length} evidencias. Encajan con «${best.asignatura}» (${best.titulacion}): ya cubres un ${best.encaje} %. ${best.motivo}`);
-      choices(["Ver propuestas de acreditación"]);
+      // Keep whatever options the chat was already offering (e.g. after closing an interview).
+      const previas = [...document.querySelectorAll(".choices button")].map((b) => b.textContent).filter((t) => t !== "Ver propuestas de acreditación");
+      choices(["Ver propuestas de acreditación", ...previas]);
     }
   } catch (e) { if (e.status === 429 || e.status === 403) aiState(false, e.message); /* 409: empty catalog, nothing to propose yet */ }
 }
@@ -645,7 +666,7 @@ $("intentForm").addEventListener("submit", (ev) => {
 $("discoverBtn").onclick = () => runProposal("", $("discoverBtn"));
 
 /* ================= Views ================= */
-const TITLES = { agente: ["Plataforma de evidencias de aprendizaje", "¿Qué has aprendido hoy?"], evidencias: ["Evidencias", "Cada aprendizaje, con sus pruebas."], objetivo: ["Acreditación", "¿Dónde puede contar lo que sabes?"], expediente: ["Expediente", "Lo que podrás presentar a la universidad."], coordinacion: ["Coordinación", "Seguimiento del piloto."], cuenta: ["Cuenta", "Tus datos, bajo tu control."] };
+const TITLES = { agente: ["Plataforma de evidencias de aprendizaje", "¿Qué has aprendido hoy?"], trayectoria: ["Mi trayectoria", "Todo lo que ya has hecho, en un solo sitio."], evidencias: ["Evidencias", "Cada aprendizaje, con sus pruebas."], objetivo: ["Acreditación", "¿Dónde puede contar lo que sabes?"], expediente: ["Expediente", "Lo que podrás presentar a la universidad."], coordinacion: ["Coordinación", "Seguimiento del piloto."], cuenta: ["Cuenta", "Tus datos, bajo tu control."] };
 function show(id) {
   document.querySelectorAll(".view").forEach((v) => v.classList.toggle("on", v.id === id));
   document.querySelectorAll("[data-view]").forEach((b) => b.classList.toggle("on", b.dataset.view === id));
@@ -666,14 +687,37 @@ function enterApp() {
   $("avatar").textContent = (perfil.nombre || session.user.email).split(/\s+/).map((w) => w[0]).slice(0, 2).join("").toUpperCase();
   $("navCoord").hidden = perfil.role !== "coordinador";
   $("chatDrive").hidden = !googleCfg;
-  if (pendingTrace) { const p = pendingTrace; pendingTrace = null; setTimeout(() => autoTraceOnSignup(p), 0); }
   $("dDate").value = today();
   render();
+  if (!entered && restoreDraft()) entered = true;
   if (!entered) {
     entered = true;
+    if (!pendingTrace && !perfil.trayectoria?.buscada && !evidences.length) show("trayectoria");
     bubble(`Hola${perfil.nombre ? ", " + perfil.nombre.split(" ")[0] : ""}. Te ayudo a convertir lo que aprendes cada día en evidencias que una universidad pueda reconocer.\n\nCuéntame algo que hayas hecho o aprendido y te haré preguntas hasta tener lo que pide un expediente: qué sabes hacer, un caso real, horas, un producto que lo pruebe y alguien que pueda confirmarlo.\n\nSi ya sabes qué quieres acreditar, dímelo. Si no, a medida que documentes te iré proponiendo dónde puede contar lo que sabes.`);
-    choices(perfil.trayectoria?.buscada ? ["Empezar a documentar"] : ["Empezar a documentar", "Buscar mi trayectoria en internet"]);
+    choices(perfil.trayectoria?.buscada ? ["Empezar a documentar"] : ["Empezar a documentar", "Cargar mi experiencia"]);
   }
+  if (pendingTrace) { const p = pendingTrace; pendingTrace = null; setTimeout(() => autoTraceOnSignup(p), 0); }
+}
+
+/* ================= Guide: where you are and what comes next ================= */
+function guideSteps() {
+  const pend = pendientes().length, cargada = !!tray().buscada || evidences.length > 0;
+  const p = objetivo.sinObjetivo ? null : progressOf(objetivo, evidences);
+  const flojas = evidences.filter((e) => scoresOf(e).suficiencia < 2);
+  const debil = p?.sts.filter((x) => x.s.n < 5).sort((a, b) => a.s.n - b.s.n)[0];
+  return [
+    { t: "Carga tu experiencia", done: cargada, d: "Sube tu currículum o deja que Lumen te busque en internet: en unos minutos tendrás tu trayectoria convertida en evidencias.", cta: "Cargar mi experiencia", go: () => show("trayectoria") },
+    { t: "Revisa lo encontrado", done: cargada && !pend, d: `Hay ${pend} experiencia${pend === 1 ? "" : "s"} que Lumen no está seguro de que sea${pend === 1 ? "" : "n"} tuya${pend === 1 ? "" : "s"}.`, cta: "Revisar", go: () => { show("trayectoria"); $("trayReview").scrollIntoView(); } },
+    { t: "Elige tu acreditación", done: !objetivo.sinObjetivo, d: "Lumen te propone asignaturas reales de universidades donde tu experiencia puede contar.", cta: "Ver acreditaciones", go: () => show("objetivo") },
+    { t: "Completa tus evidencias", done: !!p && p.pct === 100, d: flojas.length ? `${flojas.length} evidencia${flojas.length === 1 ? "" : "s"} necesita${flojas.length === 1 ? "" : "n"} más detalle. Con 3 preguntas por evidencia basta.` : debil ? `Te falta reforzar ${debil.r.id}: ${debil.r.texto.slice(0, 90)}` : "Añade pruebas y confirmaciones a tus evidencias.", cta: flojas.length ? "Completar evidencias" : "Ver qué me falta", go: () => (flojas.length ? (show("evidencias"), openQuick(flojas[0].id)) : show("objetivo")) },
+    { t: "Descarga tu expediente", done: false, d: "Tu expediente está listo para presentarlo a la universidad.", cta: "Ver expediente", go: () => show("expediente") },
+  ];
+}
+function renderGuide() {
+  const steps = guideSteps(), now = steps.findIndex((x) => !x.done), cur = steps[now];
+  $("guia").innerHTML = `<ol data-resumen="Paso ${now + 1} de ${steps.length}">${steps.map((x, i) => `<li class="${x.done ? "done" : i === now ? "now" : ""}">${safe(x.t)}</li>`).join("")}</ol>
+    <div class="guide-next"><div style="min-width:0"><b>Siguiente paso: ${safe(cur.t)}</b><span>${safe(cur.d)}</span></div><button class="btn primary" id="guiaBtn">${safe(cur.cta)} →</button></div>`;
+  $("guiaBtn").onclick = cur.go;
 }
 
 /* ================= Render ================= */
@@ -691,6 +735,7 @@ function render() {
   $("dossierProgress").innerHTML = objetivo.sinObjetivo ? '<div class="empty">Elige una asignatura del catálogo oficial en «Acreditación» para construir tu expediente.</div>' : `<p class="note">${safe(objetivo.titulacion)} · ${safe(objetivo.universidad)} · <a href="${safe(objetivo.fuente_url)}" target="_blank" rel="noopener">guía docente oficial</a></p>${progressHtml(objetivo, evidences, { compact: true })}`;
   $("dossierKpis").innerHTML = kpisHtml(objetivo, evidences);
   $("dossierMatrix").innerHTML = matrixHtml(objetivo, evidences);
+  renderGuide();
   renderMiAcreditacion();
   renderResources();
   renderProposals();
@@ -722,18 +767,20 @@ function renderEvidenceList(container, evs, obj, editable) {
       + (e.contexto ? `<button class="pill" data-act="open" data-path="${safe(e.contexto.path)}" title="Información buscada en internet durante la entrevista">🔎 Contexto de internet</button>` : "");
     const arts = mat + (e.artefactos || []).map((a) => a.url
       ? `<a class="pill" href="${safe(a.url)}" target="_blank" rel="noopener">🔗 ${safe(a.name)}</a>`
-      : `<button class="pill" data-act="open" data-path="${safe(a.path)}">${a.origen === "drive" ? "🗂" : "📎"} ${safe(a.name)}</button>`).join("");
+      : `<button class="pill" data-act="open" data-path="${safe(a.path)}">${a.origen === "drive" ? "🗂" : a.origen === "cv" ? "📄" : "📎"} ${safe(a.name)}</button>`).join("");
     const lecturas = (e.artefactos || []).filter((a) => a.lectura).map((a) => a.lectura.error
       ? `<li><b>${safe(a.name)}:</b> Lumen no pudo leerlo. ${safe(a.lectura.error)}</li>`
       : `<li><b>${safe(a.name)}:</b> ${safe(a.lectura.que_es)}${a.lectura.resultados?.length ? ` Respalda ${safe(a.lectura.resultados.join(", "))}.` : ""} <span class="subtle">Autoría: ${safe(a.lectura.autoria)}${a.lectura.notas ? " · " + safe(a.lectura.notas) : ""}</span></li>`).join("");
     const verif = !editable && v.nombre ? `<p><strong>Confirmación:</strong> ${safe(v.nombre)}${v.rol ? " (" + safe(v.rol) + ")" : ""}${v.contacto ? " · " + safe(v.contacto) : ""} · ${safe(v.estado)}</p>` : "";
     const id = safe(e.id);
     return `<article class="card">
-      <div class="card-head"><div style="min-width:0"><b>${safe(e.titulo)}</b><small>${e.tipo === "diario" ? "Diario" : e.tipo === "trayectoria" ? "Trayectoria pública" : "Entrevista"} · ${safe(fmtDate(e.fecha))}${e.contexto ? " · " + safe(e.contexto) : ""}${e.horas ? " · " + fmtN(num(e.horas)) + " h" : ""}</small></div>${vPill}</div>
+      <div class="card-head"><div style="min-width:0"><b>${safe(e.titulo)}</b><small>${e.tipo === "diario" ? "Diario" : e.tipo === "trayectoria" ? "Trayectoria" : "Entrevista"} · ${safe(fmtDate(e.fecha))}${e.contexto ? " · " + safe(e.contexto) : ""}${e.horas ? " · " + fmtN(num(e.horas)) + " h" : ""}</small></div>${vPill}</div>
       <div class="chips">${raTags}${arts}</div>
       ${lecturas ? `<ul class="lecturas"><li class="subtle">Revisión de las pruebas por Lumen</li>${lecturas}</ul>` : ""}
       <div class="vasc">${CRIT.map(([k, l]) => `<div>${l} ${s[k]}/3${dots(s[k])}</div>`).join("")}</div>
       ${e.falta ? `<div class="falta">Le falta: ${safe(e.falta)}</div>` : ""}
+      ${editable && s.suficiencia < 2 && !quickState[e.id] ? `<div class="row-actions" style="margin-top:8px"><button class="btn small accent" data-act="quick" data-id="${id}">Completar con 3 preguntas</button></div>` : ""}
+      ${editable ? quickHtml(e) : ""}
       <details class="more" data-id="${id}"${open.has(e.id) ? " open" : ""}>
         <summary>${editable ? "Contenido, pruebas y confirmación" : "Contenido"}</summary>
         ${texts}${verif}
@@ -795,6 +842,9 @@ $("evidenceList").addEventListener("click", async (ev) => {
   const b = ev.target.closest("button[data-act]"); if (!b || b.dataset.act === "open") return;
   const e = evidences.find((x) => x.id === b.dataset.id); if (!e) return;
   const msg = () => $("msg-" + e.id), say = (t) => { const m = msg(); if (m) m.textContent = t; };
+  if (b.dataset.act === "quick") { openQuick(e.id); return; }
+  if (b.dataset.act === "quickcancel") { delete quickState[e.id]; render(); return; }
+  if (b.dataset.act === "quicksave") { saveQuick(e); return; }
   if (b.dataset.act === "save") {
     const n = structuredClone(e);
     n.titulo = $("t-" + e.id).value.trim() || e.titulo; n.fecha = $("f-" + e.id).value || e.fecha; n.horas = num($("h-" + e.id).value); n.contexto = $("c-" + e.id).value;
@@ -1109,100 +1159,263 @@ $("recList").addEventListener("click", async (ev) => {
   }
 });
 
-/* ================= Public track record ================= */
+/* ================= My track record: import, review and timeline ================= */
 const tray = () => perfil?.trayectoria || {};
 const CONTEXTO_DE = { Trabajo: "Trabajo", Emprendimiento: "Trabajo", Proyecto: "Trabajo", "Charla o evento": "Trabajo", Voluntariado: "Voluntariado", "Formación": "Formación no reglada" };
+const ICONO_TIPO = { Trabajo: "💼", Emprendimiento: "🚀", Proyecto: "🧩", Voluntariado: "🤝", "Formación": "🎓", "Publicación": "📰", "Premio o reconocimiento": "🏅", "Charla o evento": "🎤", Otro: "•" };
+const ORIGEN_TXT = { cv: "De tu currículum", internet: "Encontrado en internet", "cv+internet": "Currículum + fuentes públicas" };
 const fechaDe = (x) => { const f = x.fecha_fin || x.fecha_inicio || ""; return /^\d{4}-\d{2}$/.test(f) ? f + "-15" : /^\d{4}$/.test(f) ? f + "-06-30" : today(); };
+const periodo = (x) => (x.fecha_inicio || x.fecha_fin ? [x.fecha_inicio, x.fecha_fin || (x.fecha_inicio ? "hoy" : "")].filter(Boolean).join(" – ") : "");
+const pendientes = () => (tray().items || []).filter((x) => x.estado === "pendiente");
+
 function evidenceFromTray(x) {
+  const t = tray(), delCv = (x.origen || "").includes("cv") && t.cv?.path;
+  const ev = { texto: [x.rol && `Papel: ${x.rol}.`, x.organizacion && `Organización: ${x.organizacion}.`, x.descripcion, x.contexto].filter(Boolean).join(" ") };
+  if (x.logros?.length) ev.logros = x.logros.join("; ");
+  if (x.competencias?.length) ev.competencias = x.competencias.join("; ");
   return {
     id: uid(), kind: "evidence", tipo: "trayectoria", titulo: x.titulo, fuente: x.tipo, url: x.fuentes[0]?.url || "", fecha: fechaDe(x), createdAt: Date.now(),
-    contexto: CONTEXTO_DE[x.tipo] || "", horas: 0, resultados: [], evidencias: { texto: [x.rol && `Papel: ${x.rol}.`, x.organizacion && `Organización: ${x.organizacion}.`, x.descripcion].filter(Boolean).join(" ") },
-    criterios: { validez: 1, suficiencia: 1 }, falta: "Haz una entrevista sobre esta experiencia para explicar qué aprendiste, cómo lo aplicaste y cuántas horas le dedicaste.",
-    artefactos: x.fuentes.map((f) => ({ name: f.titulo.slice(0, 120), url: f.url, origen: "internet", subidoEl: new Date().toISOString() })),
+    contexto: CONTEXTO_DE[x.tipo] || "", horas: 0, resultados: [], evidencias: ev,
+    criterios: { validez: 1, suficiencia: 1 }, falta: "Complétala con 3 preguntas o con una entrevista: qué aprendiste, cómo lo aplicaste y cuántas horas le dedicaste.",
+    artefactos: [
+      ...x.fuentes.map((f) => ({ name: f.titulo.slice(0, 120), url: f.url, origen: "internet", subidoEl: new Date().toISOString() })),
+      ...(delCv ? [{ name: t.cv.name || "Currículum", path: t.cv.path, origen: "cv", subidoEl: new Date().toISOString() }] : []),
+    ],
     verificacion: { nombre: "", rol: "", contacto: "", estado: "sin solicitar" }, dialogue: [], ai: true,
   };
 }
-/** Runs the track-record search; high-confidence items are loaded as evidence straight away, the rest wait for review. */
-async function traceAndLoad({ nombre, pistas = "", enlaces = [] }) {
-  const r = await (await api("/api/trayectoria", { nombre, pistas, enlaces, acepto: true })).json();
-  let t = r.trayectoria, cargadas = 0;
-  for (const x of t.items.filter((i) => i.estado === "pendiente" && i.confianza === "alta")) {
-    const e = evidenceFromTray(x);
-    await saveEvidence(e);
-    t = { ...t, items: t.items.map((i) => (i.id === x.id ? { ...i, estado: "confirmada", auto: true, evidencia_id: e.id } : i)) };
-    cargadas++;
+
+/** Reads the NDJSON progress stream of the import route. */
+async function streamImport(body, onStep) {
+  const r = await api("/api/trayectoria", body);
+  const reader = r.body.getReader(), dec = new TextDecoder();
+  let buf = "", fin = null;
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    let i;
+    while ((i = buf.indexOf("\n")) >= 0) {
+      const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1);
+      if (!line) continue;
+      const ev = JSON.parse(line);
+      if (ev.tipo === "paso") onStep(ev.texto);
+      else if (ev.tipo === "error") throw new Error(ev.mensaje);
+      else if (ev.tipo === "fin") fin = ev;
+    }
   }
-  await updatePerfil({ trayectoria: t });
-  renderTrayectoria();
-  if (cargadas) maybeAutoPropose();
-  return { cargadas, porRevisar: t.items.filter((i) => i.estado === "pendiente").length };
+  if (!fin) throw new Error("La carga se interrumpió antes de terminar. Vuelve a intentarlo.");
+  return fin;
+}
+function logStep(texto) {
+  const log = $("trayLog"); log.hidden = false;
+  const li = document.createElement("li"); li.textContent = texto; log.append(li); log.scrollTop = log.scrollHeight;
+}
+
+let importing = false;
+/** Loads the person's experience: CV and/or web search; what is clearly theirs becomes evidence straight away. */
+async function runImport({ nombre, pistas = "", enlaces = [], cvFile = null, web }) {
+  if (importing) return null;
+  importing = true;
+  const btn = $("tBuscar"); btn.disabled = true; btn.textContent = "Cargando tu experiencia…";
+  $("trayLog").innerHTML = ""; $("trayLog").classList.remove("done"); $("tMsg").textContent = "Puede tardar unos minutos. No cierres la página.";
+  try {
+    let cv = null;
+    if (cvFile) {
+      if (cvFile.size > 10 * 1024 * 1024) throw new Error("El currículum supera los 10 MB.");
+      logStep("Subiendo tu currículum");
+      const a = await uploadFile(cvFile, "cv", "fuentes");
+      cv = { path: a.path, name: cvFile.name };
+    }
+    const fin = await streamImport({ nombre, pistas, enlaces, cv, acepto: !!web }, logStep);
+    let t = fin.trayectoria, cargadas = 0;
+    perfil.trayectoria = t;
+    const claras = t.items.filter((i) => i.estado === "pendiente" && i.confianza === "alta");
+    for (const x of claras) {
+      logStep(`Creando evidencias (${cargadas + 1} de ${claras.length})`);
+      const e = evidenceFromTray(x);
+      await saveEvidence(e);
+      t = { ...t, items: t.items.map((i) => (i.id === x.id ? { ...i, estado: "confirmada", auto: true, evidencia_id: e.id } : i)) };
+      perfil.trayectoria = t;
+      cargadas++;
+    }
+    await updatePerfil({ trayectoria: t });
+    const porRevisar = t.items.filter((i) => i.estado === "pendiente").length;
+    logStep(cargadas || porRevisar ? `Listo: ${cargadas} experiencias cargadas en tus evidencias${porRevisar ? ` y ${porRevisar} por revisar` : ""}` : "No he encontrado experiencias nuevas");
+    $("trayLog").classList.add("done");
+    $("tMsg").textContent = cargadas || porRevisar ? "" : "Prueba a subir tu currículum, o añade pistas y enlaces tuyos.";
+    $("tCv").value = ""; setCvName(null);
+    render();
+    if (cargadas) maybeAutoPropose();
+    return { cargadas, porRevisar };
+  } catch (e) {
+    aiProblem(e); $("tMsg").textContent = e.message; logStep("No se pudo completar la carga");
+    return null;
+  } finally { importing = false; btn.disabled = false; btn.textContent = "Cargar mi experiencia"; }
 }
 async function autoTraceOnSignup(p) {
-  if (p.nombre.split(/\s+/).length < 2) { bubble("Para buscar tu trayectoria necesito tu nombre y al menos un apellido. Puedes lanzarla cuando quieras desde «Mis evidencias»."); return; }
-  const el = bubble(`Estoy buscando tu trayectoria pública en internet («${p.nombre}»). Tardo uno o dos minutos; mientras tanto puedes seguir.`); el.classList.add("thinking");
-  try {
-    const { cargadas, porRevisar } = await traceAndLoad(p);
-    el.classList.remove("thinking");
-    el.textContent = cargadas || porRevisar
-      ? `He terminado de buscar tu trayectoria. He cargado ${cargadas} experiencia${cargadas === 1 ? "" : "s"} en tus evidencias${porRevisar ? ` y hay ${porRevisar} más que no tengo claro que sean tuyas: revísalas` : ""}. Si algo no es tuyo, quítalo con «No soy yo».`
-      : "He buscado tu trayectoria pero no he encontrado nada fiable. Puedes volver a intentarlo con pistas o con tus enlaces desde «Mis evidencias».";
-    choices(["Ver mi trayectoria", "Empezar a documentar"]);
-  } catch (e) {
-    el.classList.remove("thinking");
-    el.textContent = `No he podido buscar tu trayectoria: ${e.message} Puedes intentarlo desde «Mis evidencias».`;
-  }
+  show("trayectoria");
+  $("tNombre").value = p.nombre; $("tPistas").value = p.pistas || ""; $("tAcepto").checked = true;
+  if (p.nombre.split(/\s+/).length < 2) { $("tMsg").textContent = "Para buscarte en internet necesito tu nombre y al menos un apellido."; return; }
+  const r = await runImport({ nombre: p.nombre, pistas: p.pistas, web: true });
+  if (r) bubble(`He buscado tu trayectoria en internet: ${r.cargadas} experiencia${r.cargadas === 1 ? "" : "s"} cargada${r.cargadas === 1 ? "" : "s"} en tus evidencias${r.porRevisar ? ` y ${r.porRevisar} por revisar` : ""}. Sube también tu currículum en «Mi trayectoria» para completarla.`);
 }
+
+function setCvName(f) { $("tCvName").textContent = f ? f.name : "Elige el archivo o arrástralo aquí"; $("tCvDrop").classList.toggle("has", !!f); }
+$("tCv").addEventListener("change", (ev) => setCvName(ev.target.files?.[0] || null));
+for (const type of ["dragover", "dragleave", "drop"]) $("tCvDrop").addEventListener(type, (ev) => {
+  ev.preventDefault(); $("tCvDrop").classList.toggle("over", type === "dragover");
+  if (type === "drop" && ev.dataTransfer?.files?.[0]) { $("tCv").files = ev.dataTransfer.files; setCvName(ev.dataTransfer.files[0]); }
+});
+$("trayForm").addEventListener("submit", (ev) => {
+  ev.preventDefault();
+  const cvFile = $("tCv").files?.[0] || null, web = $("tAcepto").checked, nombre = $("tNombre").value.trim();
+  if (!cvFile && !web) { $("tMsg").textContent = "Sube tu currículum o marca la casilla para que Lumen te busque en internet."; return; }
+  if (web && nombre.split(/\s+/).length < 2) { $("tMsg").textContent = "Para buscarte en internet, escribe tu nombre y al menos un apellido."; return; }
+  if (cvFile && !/\.(pdf|txt|md)$/i.test(cvFile.name)) { $("tMsg").textContent = "Sube el currículum en PDF (desde Word: Archivo → Guardar como PDF)."; return; }
+  runImport({ nombre, pistas: $("tPistas").value.trim(), enlaces: $("tEnlaces").value.split("\n").map((x) => x.trim()).filter(Boolean), cvFile, web });
+});
+
+const sourcesHtml = (x) => (x.fuentes?.length ? `<div class="sources">${x.fuentes.map((f) => { let h = f.url; try { h = new URL(f.url).hostname.replace(/^www\./, ""); } catch {} return `<a href="${safe(f.url)}" target="_blank" rel="noopener">${safe(f.titulo.slice(0, 90))} · ${safe(h)}</a>`; }).join("")}</div>` : "");
+const skillsHtml = (x) => (x.competencias?.length ? `<div class="chips">${x.competencias.map((c) => `<span class="pill">${safe(c)}</span>`).join("")}</div>` : "");
 function renderTrayectoria() {
   const t = tray();
   if (!$("tNombre").value) $("tNombre").value = t.nombre || perfil.nombre || "";
   if (!$("tPistas").value && t.pistas) $("tPistas").value = t.pistas;
-  const items = t.items || [];
-  if (!items.length) { $("trayList").innerHTML = t.buscada ? '<div class="empty">No encontré nada fiable sobre ti. Añade pistas o enlaces tuyos y vuelve a buscar.</div>' : ""; return; }
-  const pend = items.filter((x) => x.estado === "pendiente"), conf = items.filter((x) => x.estado === "confirmada"), desc = items.filter((x) => x.estado === "descartada").length;
+  const items = t.items || [], pend = items.filter((x) => x.estado === "pendiente"), vivos = items.filter((x) => x.estado === "confirmada");
+  $("trayBadge").hidden = !pend.length; $("trayBadge").textContent = pend.length;
+
+  $("trayReview").hidden = !pend.length;
+  $("trayReviewTitle").textContent = `Por revisar (${pend.length})`;
   const conf_cls = { alta: "ok", media: "warn", baja: "" };
-  const card = (x) => `<article class="card">
-      <div class="card-head"><div style="min-width:0"><b>${safe(x.titulo)}</b><small>${safe(x.tipo)}${x.organizacion ? " · " + safe(x.organizacion) : ""}${x.rol ? " · " + safe(x.rol) : ""}${x.fecha_inicio || x.fecha_fin ? " · " + safe([x.fecha_inicio, x.fecha_fin].filter(Boolean).join("–")) : ""}</small></div>
-        ${x.estado === "confirmada" ? `<span class="pill ok">${x.auto ? "Cargada automáticamente" : "Evidencia creada"}</span>` : `<span class="pill ${conf_cls[x.confianza] || ""}" title="${safe(x.motivo_confianza)}">Confianza ${safe(x.confianza)}</span>`}</div>
+  $("trayList").innerHTML = pend.map((x) => `<article class="card">
+      <div class="card-head"><div style="min-width:0"><b>${ICONO_TIPO[x.tipo] || "•"} ${safe(x.titulo)}</b><small>${safe(x.tipo)}${x.organizacion ? " · " + safe(x.organizacion) : ""}${x.rol ? " · " + safe(x.rol) : ""}${periodo(x) ? " · " + safe(periodo(x)) : ""}</small></div>
+        <span class="facts"><span class="pill">${safe(ORIGEN_TXT[x.origen] || ORIGEN_TXT.internet)}</span><span class="pill ${conf_cls[x.confianza] || ""}">Confianza ${safe(x.confianza)}</span></span></div>
       <p>${safe(x.descripcion)}</p>
-      ${x.estado === "pendiente" ? `<p class="subtle">${safe(x.motivo_confianza)}</p>` : ""}
-      <div class="sources">${x.fuentes.map((f) => { let h = f.url; try { h = new URL(f.url).hostname.replace(/^www\./, ""); } catch {} return `<a href="${safe(f.url)}" target="_blank" rel="noopener">${safe(f.titulo.slice(0, 90))} · ${safe(h)}</a>`; }).join("")}</div>
-      <div class="row-actions">${x.estado === "pendiente"
-        ? `<button class="btn small accent" data-tray="si" data-id="${safe(x.id)}">Es mío: crear evidencia</button><button class="btn small" data-tray="no" data-id="${safe(x.id)}">No soy yo</button>`
-        : `<button class="btn small" data-tray="entrevista" data-id="${safe(x.id)}">Profundizar con una entrevista</button><button class="btn small" data-tray="quitar" data-id="${safe(x.id)}">No soy yo</button>`}</div>
-    </article>`;
-  $("trayList").innerHTML = (pend.length ? `<h3>Por revisar (${pend.length})</h3>${pend.map(card).join("")}` : "") + (conf.length ? `<h3>Confirmado (${conf.length})</h3>${conf.map(card).join("")}` : "") + (desc ? `<p class="subtle">${desc} descartado${desc > 1 ? "s" : ""} por no ser tuyo${desc > 1 ? "s" : ""}.</p>` : "");
+      <p class="subtle">${safe(x.motivo_confianza)}</p>
+      ${skillsHtml(x)}${sourcesHtml(x)}
+      <div class="row-actions"><button class="btn small accent" data-tray="si" data-id="${safe(x.id)}">Es mío: crear evidencia</button><button class="btn small" data-tray="no" data-id="${safe(x.id)}">No soy yo</button></div>
+    </article>`).join("");
+
+  $("trayLineBox").hidden = !vivos.length;
+  const clave = (x) => x.fecha_fin || x.fecha_inicio || "";
+  const sorted = [...vivos].sort((a, b) => (clave(b) || "0").localeCompare(clave(a) || "0"));
+  let year = null, html = "";
+  for (const x of sorted) {
+    const y = clave(x).slice(0, 4) || "Sin fecha";
+    if (y !== year) { year = y; html += `<div class="tl-year">${safe(y)}</div>`; }
+    const e = evidences.find((i) => i.id === x.evidencia_id), s = e ? scoresOf(e) : null, completa = s && s.suficiencia >= 2;
+    html += `<div class="tl-item${completa ? " ok" : ""}"><span class="tl-icon" aria-hidden="true">${ICONO_TIPO[x.tipo] || "•"}</span>
+      <div class="tl-body"><b>${safe(x.titulo)}</b><small>${safe(x.tipo)}${x.organizacion ? " · " + safe(x.organizacion) : ""}${periodo(x) ? " · " + safe(periodo(x)) : ""} · ${safe(ORIGEN_TXT[x.origen] || ORIGEN_TXT.internet)}${x.fuentes?.length ? ` · ${x.fuentes.length} fuente${x.fuentes.length > 1 ? "s" : ""}` : ""}</small>
+        <p>${safe(x.descripcion)}</p>${skillsHtml(x)}
+        <div class="row-actions" style="margin-top:8px">${completa ? '<span class="pill ok">Evidencia completa</span>' : '<span class="pill warn">Falta profundidad</span>'}
+          ${e && !completa ? `<button class="btn small accent" data-tray="completar" data-id="${safe(x.id)}">Completar con 3 preguntas</button>` : ""}
+          <button class="btn small" data-tray="entrevista" data-id="${safe(x.id)}">Entrevista</button><button class="btn small" data-tray="quitar" data-id="${safe(x.id)}">No soy yo</button></div></div></div>`;
+  }
+  $("trayLine").innerHTML = html;
 }
-$("trayForm").addEventListener("submit", async (ev) => {
-  ev.preventDefault();
-  const btn = $("tBuscar"); btn.disabled = true; btn.textContent = "Buscando en internet…";
-  $("tMsg").textContent = "Puede tardar entre uno y tres minutos. No cierres la página.";
-  try {
-    const enlaces = $("tEnlaces").value.split("\n").map((x) => x.trim()).filter(Boolean);
-    if (!$("tAcepto").checked) throw new Error("Marca la autorización para que Lumen pueda buscar.");
-    const { cargadas, porRevisar } = await traceAndLoad({ nombre: $("tNombre").value.trim(), pistas: $("tPistas").value.trim(), enlaces });
-    $("tMsg").textContent = cargadas || porRevisar ? `He cargado ${cargadas} en tus evidencias y hay ${porRevisar} por revisar.` : "No he encontrado nada nuevo. Prueba con más pistas o con tus enlaces.";
-  } catch (e) { aiProblem(e); $("tMsg").textContent = e.message; }
-  finally { btn.disabled = false; btn.textContent = "Buscar mi trayectoria"; }
-});
-$("trayList").addEventListener("click", async (ev) => {
+async function decideTray(x, accion) {
+  const t = tray();
+  let evId = null;
+  if (accion === "si") { const e = evidenceFromTray(x); evId = e.id; await saveEvidence(e); }
+  if (accion === "quitar" && x.evidencia_id) { const e = evidences.find((i) => i.id === x.evidencia_id); if (e) await deleteEvidence(e); }
+  const items = tray().items.map((i) => (i.id === x.id ? { ...i, estado: accion === "si" ? "confirmada" : "descartada", evidencia_id: evId, auto: false } : i));
+  await updatePerfil({ trayectoria: { ...t, items } });
+  return evId;
+}
+async function onTrayClick(ev) {
   const b = ev.target.closest("[data-tray]"); if (!b) return;
-  const t = tray(), x = (t.items || []).find((i) => i.id === b.dataset.id); if (!x) return;
+  const x = (tray().items || []).find((i) => i.id === b.dataset.id); if (!x) return;
   if (b.dataset.tray === "entrevista") {
     show("agente"); if (busy) return;
+    document.querySelectorAll(".choices").forEach((c) => c.remove());
     newDraft(); bubble(`Quiero profundizar en «${x.titulo}».`, "user");
     await startTopic(`${x.titulo}${x.organizacion ? " (" + x.organizacion + ")" : ""}. ${x.descripcion}`);
     return;
   }
+  if (b.dataset.tray === "completar") { show("evidencias"); openQuick(x.evidencia_id); return; }
   b.disabled = true;
   try {
-    let evId = null;
-    if (b.dataset.tray === "si") { const e = evidenceFromTray(x); evId = e.id; await saveEvidence(e); }
-    if (b.dataset.tray === "quitar" && x.evidencia_id) { const e = evidences.find((i) => i.id === x.evidencia_id); if (e) await deleteEvidence(e); }
-    const items = t.items.map((i) => (i.id === x.id ? { ...i, estado: b.dataset.tray === "si" ? "confirmada" : "descartada", evidencia_id: evId, auto: false } : i));
-    await updatePerfil({ trayectoria: { ...t, items } });
-    renderTrayectoria();
+    const evId = await decideTray(x, b.dataset.tray);
+    render();
     if (evId) maybeAutoPropose();
   } catch (e) { b.disabled = false; $("tMsg").textContent = e.message || "No se pudo guardar."; }
+}
+$("trayList").addEventListener("click", onTrayClick);
+$("trayLine").addEventListener("click", onTrayClick);
+$("trayAll").onclick = async () => {
+  const btn = $("trayAll"); btn.disabled = true; btn.textContent = "Creando evidencias…";
+  try { for (const x of pendientes()) await decideTray(x, "si"); render(); maybeAutoPropose(); }
+  finally { btn.disabled = false; btn.textContent = "Todo esto es mío"; }
+};
+
+/* ================= Complete an evidence with three questions ================= */
+const quickState = {};
+const PREGUNTAS_BASE = (e) => [
+  `En «${e.titulo}», ¿qué hiciste tú exactamente y qué aprendiste? Cuenta un caso concreto.`,
+  "Describe una decisión o un problema real de esa experiencia: qué hiciste, con qué criterio y qué resultado obtuviste (con alguna cifra si puedes).",
+  "¿Qué límites tiene lo que sabes de esto, y quién podría confirmar tu trabajo (nombre y rol)?",
+];
+async function openQuick(evId) {
+  const e = evidences.find((x) => x.id === evId); if (!e) return;
+  if (!quickState[evId]) {
+    quickState[evId] = { cargando: true, preguntas: [], respuestas: ["", "", ""], horas: e.horas || "" };
+    render();
+    let preguntas = PREGUNTAS_BASE(e);
+    if (aiOk) {
+      try { const r = await (await api("/api/analyze", { kind: "preguntas", titulo: e.titulo, resumen: Object.values(e.evidencias || {}).join(" ") })).json(); if (r.preguntas?.length === 3) preguntas = r.preguntas; }
+      catch (err) { aiProblem(err); }
+    }
+    Object.assign(quickState[evId], { cargando: false, preguntas });
+  }
+  render();
+  document.getElementById("qk-" + evId)?.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+function quickHtml(e) {
+  const q = quickState[e.id]; if (!q) return "";
+  const id = safe(e.id);
+  if (q.cargando) return `<div class="quick" id="qk-${id}">Lumen está preparando tres preguntas sobre esta experiencia…</div>`;
+  return `<div class="quick" id="qk-${id}">
+    ${q.preguntas.map((p, i) => `<label class="field">${safe(p)}<textarea data-quick="${id}" data-i="${i}" rows="3">${safe(q.respuestas[i])}</textarea></label>`).join("")}
+    <label class="field" style="max-width:240px">Horas que le dedicaste (aproximadas)<input type="number" min="0" step="1" data-quick="${id}" data-i="horas" value="${safe(q.horas)}"></label>
+    <div class="row-actions" style="margin-top:0"><button class="btn small accent" data-act="quicksave" data-id="${id}"${q.guardando ? " disabled" : ""}>${q.guardando ? "Analizando tus respuestas…" : "Guardar respuestas"}</button><button class="btn small" data-act="quickcancel" data-id="${id}">Cancelar</button><span class="toast">${safe(q.msg || "")}</span></div>
+  </div>`;
+}
+async function saveQuick(e) {
+  const q = quickState[e.id];
+  if (q.respuestas.filter((r) => r.trim().length > 20).length < 2) { q.msg = "Responde al menos a dos preguntas, con algo de detalle."; render(); return; }
+  q.guardando = true; q.msg = ""; render();
+  const resumen = Object.values(e.evidencias || {}).join(" ");
+  const history = [{ role: "user", content: `Experiencia: ${e.titulo}. ${resumen}`.slice(0, 5000) }];
+  q.preguntas.forEach((p, i) => { if (q.respuestas[i].trim()) history.push({ role: "assistant", content: p }, { role: "user", content: q.respuestas[i].trim().slice(0, 5000) }); });
+  if (num(q.horas)) history.push({ role: "assistant", content: "¿Cuántas horas le dedicaste?" }, { role: "user", content: `Unas ${num(q.horas)} horas.` });
+  const n = structuredClone(e), texto = q.respuestas.join(" ");
+  try {
+    let o = null;
+    if (aiOk) { try { o = await (await api("/api/analyze", { kind: "interview", titulo: e.titulo, history })).json(); } catch (err) { aiProblem(err); } }
+    if (o) {
+      for (const k of ["idea", "aplicacion", "argumentacion", "conexion", "limites"]) if (o.evidencias?.[k]?.trim()) n.evidencias[k] = o.evidencias[k].trim();
+      n.criterios = { validez: clamp03(o.validez), suficiencia: clamp03(o.suficiencia) };
+      n.falta = o.falta || "";
+      if (o.resultados?.length) n.resultados = o.resultados;
+      if (CONTEXTOS.includes(o.contexto) && !n.contexto) n.contexto = o.contexto;
+      if (o.verificador_nombre && !n.verificacion?.nombre) n.verificacion = { ...n.verificacion, nombre: o.verificador_nombre, rol: o.verificador_rol || "" };
+      n.horas = num(q.horas) || num(o.horas) || n.horas;
+    } else {
+      [["idea", 0], ["aplicacion", 1], ["limites", 2]].forEach(([k, i]) => { if (q.respuestas[i].trim()) n.evidencias[k] = q.respuestas[i].trim(); });
+      n.criterios = { validez: Math.max(1, clamp03(n.criterios?.validez)), suficiencia: texto.length > 500 ? 2 : 1 };
+      n.horas = num(q.horas) || n.horas;
+      if (!n.resultados?.length) n.resultados = ruleLink(texto + " " + e.titulo);
+    }
+    n.dialogue = [...(n.dialogue || []), ...history.slice(1).map((m) => ({ role: m.role, text: m.content }))];
+    delete quickState[e.id];
+    await saveEvidence(n);
+  } catch (err) { q.guardando = false; q.msg = err.message; render(); }
+}
+$("evidenceList").addEventListener("input", (ev) => {
+  const el = ev.target.closest("[data-quick]"); if (!el) return;
+  const q = quickState[el.dataset.quick]; if (!q) return;
+  if (el.dataset.i === "horas") q.horas = el.value; else q.respuestas[Number(el.dataset.i)] = el.value;
 });
 
 /* ================= Google Drive ================= */

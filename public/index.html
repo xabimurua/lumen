@@ -71,6 +71,7 @@
     <div class="caption">Del día a día al crédito</div>
     <nav class="nav">
       <button class="on" data-view="agente"><span>✦</span>Hoy</button>
+      <button data-view="trayectoria"><span>◴</span>Mi trayectoria <b class="badge" id="trayBadge" hidden></b></button>
       <button data-view="evidencias"><span>▤</span>Mis evidencias</button>
       <button data-view="objetivo"><span>◎</span>Acreditación <b class="badge" id="propBadge" hidden></b></button>
       <button data-view="expediente"><span>◈</span>Expediente</button>
@@ -88,6 +89,7 @@
 
     <!-- HOY -->
     <section id="agente" class="view on">
+      <div class="guide" id="guia"></div>
       <div class="workspace">
         <div class="chat">
           <div class="chat-head">
@@ -146,22 +148,44 @@
       </div>
     </section>
 
-    <!-- EVIDENCIAS -->
-    <section id="evidencias" class="view">
-      <div class="full" id="trayectoria">
-        <h2>Tu trayectoria pública</h2>
-        <p class="note">Lumen puede buscar en internet lo que ya has hecho (trabajos, empresas y proyectos, voluntariados, formación, publicaciones, charlas, premios) para convertirlo en evidencias. Tú decides qué es tuyo: nada entra en tu expediente sin que lo confirmes.</p>
-        <form class="form" id="trayForm" style="max-width:860px">
-          <div class="edit-grid">
-            <label class="field">Tu nombre y apellidos<input id="tNombre" required autocomplete="name"></label>
-            <label class="field">Pistas para no confundirte con otras personas<input id="tPistas" placeholder="Ej.: Bilbao, Osoigo, participación ciudadana, Deusto"></label>
+    <!-- TRAYECTORIA -->
+    <section id="trayectoria" class="view">
+      <div class="full">
+        <h2>Carga tu experiencia</h2>
+        <p class="note">Lumen reúne lo que ya has hecho (trabajos, empresas y proyectos, voluntariados, formación, publicaciones, charlas, premios) y lo convierte en evidencias. La forma más completa es subir tu currículum y dejar que además te busque en internet: cruza las dos cosas y añade fuentes públicas a cada experiencia.</p>
+        <form class="form" id="trayForm" style="max-width:900px">
+          <div class="import-grid">
+            <label class="drop" for="tCv" id="tCvDrop">
+              <b>Tu currículum o tu perfil de LinkedIn en PDF</b>
+              <span id="tCvName">Elige el archivo o arrástralo aquí</span>
+              <small>En LinkedIn: abre tu perfil → «Recursos» (o «Más») → «Guardar en PDF».</small>
+            </label>
+            <input type="file" id="tCv" accept=".pdf,.txt,.md,application/pdf,text/plain" class="visually-hidden">
+            <div class="form" style="margin-top:0">
+              <label class="field">Tu nombre y apellidos<input id="tNombre" autocomplete="name"></label>
+              <label class="field">Pistas para no confundirte con otras personas<input id="tPistas" placeholder="Ej.: Bilbao, Osoigo, participación ciudadana"></label>
+              <label class="field">Enlaces tuyos (uno por línea): web, blog, perfiles, noticias<textarea id="tEnlaces" style="min-height:58px" placeholder="https://…"></textarea></label>
+            </div>
           </div>
-          <label class="field">Enlaces tuyos (opcional, uno por línea): LinkedIn, web, blog, perfiles<textarea id="tEnlaces" style="min-height:70px" placeholder="https://…"></textarea></label>
-          <label class="check"><input type="checkbox" id="tAcepto" required> Autorizo a Lumen a buscar en internet información pública sobre mí para proponerme evidencias. Lo que encuentre se guarda en mi cuenta, puedo descartarlo y borrarlo cuando quiera.</label>
-          <div class="row-actions"><button class="btn primary" type="submit" id="tBuscar">Buscar mi trayectoria</button><span class="toast" id="tMsg" aria-live="polite"></span></div>
+          <label class="check"><input type="checkbox" id="tAcepto"> Buscar también en internet. Autorizo a Lumen a buscar información pública sobre mí para proponerme evidencias. Lo que encuentre se guarda en mi cuenta y puedo descartarlo y borrarlo cuando quiera.</label>
+          <div class="row-actions"><button class="btn primary" type="submit" id="tBuscar">Cargar mi experiencia</button><span class="toast" id="tMsg" aria-live="polite"></span></div>
+          <ol class="steps-log" id="trayLog" hidden aria-live="polite"></ol>
         </form>
+      </div>
+      <div class="full" id="trayReview" hidden>
+        <div class="card-head"><h2 id="trayReviewTitle" style="margin:0">Por revisar</h2><button class="btn small accent" type="button" id="trayAll">Todo esto es mío</button></div>
+        <p class="note">Lumen no está seguro de que estas experiencias sean tuyas. Confirma las que sí y descarta el resto.</p>
         <div class="items" id="trayList"></div>
       </div>
+      <div class="full" id="trayLineBox" hidden>
+        <h2>Mi línea de vida</h2>
+        <p class="note">Lo que ya forma parte de tus evidencias. Las experiencias cargadas desde el currículum o desde internet son solo el punto de partida: complétalas con 3 preguntas o con una entrevista para que demuestren lo que aprendiste.</p>
+        <div class="timeline" id="trayLine"></div>
+      </div>
+    </section>
+
+    <!-- EVIDENCIAS -->
+    <section id="evidencias" class="view">
       <div class="full">
         <h2>Mis evidencias</h2>
         <p class="note">Cada evidencia se valora con cuatro criterios. <b>Validez</b> y <b>suficiencia</b> las estima Lumen a partir de lo que cuentas. <b>Autenticidad</b> sube cuando adjuntas un producto y cuando alguien confirma tu aprendizaje. <b>Vigencia</b> depende de cuándo ocurrió.</p>
