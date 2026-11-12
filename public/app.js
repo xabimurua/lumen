@@ -945,7 +945,12 @@ function enterApp() {
     if (!pendingTrace && !perfil.trayectoria?.buscada && !evidences.length) show("trayectoria"); else show("agente");
   } else render();
   if (pendingTrace) { const p = pendingTrace; pendingTrace = null; setTimeout(() => autoTraceOnSignup(p), 0); }
+  if (!consolidada) {
+    consolidada = true;
+    consolidarTrayectoria().then((n) => { if (n) { render(); $("tMsg").textContent = `He unificado ${n} experiencia${n === 1 ? "" : "s"} repetida${n === 1 ? "" : "s"} que venía${n === 1 ? "" : "n"} de varias fuentes.`; } }).catch((e) => console.error(e));
+  }
 }
+let consolidada = false;
 
 /* ================= What Lumen suggests next ================= */
 // Not a sequence: experience, accreditations, strengthening and presenting feed each other, and the person
@@ -1628,6 +1633,106 @@ const fechaDe = (x) => { const f = x.fecha_fin || x.fecha_inicio || ""; return /
 const periodo = (x) => (x.fecha_inicio || x.fecha_fin ? [x.fecha_inicio, x.fecha_fin || (x.fecha_inicio ? "hoy" : "")].filter(Boolean).join(" – ") : "");
 const pendientes = () => (tray().items || []).filter((x) => x.estado === "pendiente");
 
+/* ---------- Duplicates: the same experience read from the CV, from internet or in another import ---------- */
+const LEGAL = /\b(s\.?\s?l\.?\s?u?|s\.?\s?a\.?|s\.?\s?coop|coop|ltd|inc|gmbh|the|grupo|group|fundacion|asociacion|elkartea)\b/g;
+const orgKey = (o) => normalize(o).replace(/[^a-z0-9ñ ]+/g, " ").replace(LEGAL, " ").replace(/\s+/g, " ").trim();
+const mismaOrg = (a, b) => { const x = orgKey(a), y = orgKey(b); return x.length > 2 && y.length > 2 && (x === y || x.includes(y) || y.includes(x)); };
+const palabras = (t) => new Set((normalize(t).match(/[a-z0-9ñ]{4,}/g) || []).filter((w) => !stop.has(w)));
+function parecido(a, b) {
+  const x = palabras(a), y = palabras(b);
+  if (!x.size || !y.size) return 0;
+  let n = 0; x.forEach((w) => { if (y.has(w)) n++; });
+  return n / Math.min(x.size, y.size);
+}
+const anio = (f) => Number(String(f || "").slice(0, 4)) || null;
+/** Two periods are compatible if they overlap, or if one of them has no dates. */
+function fechasCompatibles(a, b) {
+  const a1 = anio(a.fecha_inicio), a2 = anio(a.fecha_fin) || (a1 ? 9999 : null), b1 = anio(b.fecha_inicio), b2 = anio(b.fecha_fin) || (b1 ? 9999 : null);
+  if (!a1 && !a2 || !b1 && !b2) return true;
+  const ai = a1 || a2, af = a2 || a1, bi = b1 || b2, bf = b2 || b1;
+  return ai <= bf + 1 && bi <= af + 1;
+}
+const EN_ORG = new Set(["Trabajo", "Emprendimiento", "Proyecto", "Voluntariado"]);
+/** Same experience? Jobs, ventures, projects and volunteering: same organisation at overlapping times.
+    Courses, publications, awards and talks: also a similar title (one university can give several degrees). */
+function mismaExperiencia(a, b) {
+  if (!fechasCompatibles(a, b)) return false;
+  const orgs = a.organizacion && b.organizacion, igualOrg = orgs && mismaOrg(a.organizacion, b.organizacion), sim = parecido(a.titulo, b.titulo);
+  if (orgs && !igualOrg) return sim >= 0.8 && a.tipo === b.tipo;
+  if (igualOrg && EN_ORG.has(a.tipo) && EN_ORG.has(b.tipo)) return true;
+  if (igualOrg) return sim >= 0.5;
+  return sim >= 0.7 && (a.tipo === b.tipo || EN_ORG.has(a.tipo) === EN_ORG.has(b.tipo));
+}
+const PESO_ESTADO = { confirmada: 3, descartada: 2, pendiente: 1 };
+const uniq = (arr, n) => [...new Map(arr.filter(Boolean).map((v) => [normalize(String(v)), v])).values()].slice(0, n);
+function unirItems(a, b) {
+  const [p, q] = (PESO_ESTADO[b.estado] || 0) > (PESO_ESTADO[a.estado] || 0) || (!a.evidencia_id && b.evidencia_id) ? [b, a] : [a, b];
+  const deCv = [p, q].find((x) => String(x.origen).includes("cv")) || p;
+  const origenes = new Set([p, q].flatMap((x) => String(x.origen || "internet").split("+")));
+  const fechas = [p.fecha_inicio, q.fecha_inicio].filter(Boolean).sort();
+  return {
+    ...q, ...p,
+    descripcion: (p.descripcion || "").length >= (q.descripcion || "").length ? p.descripcion : q.descripcion,
+    organizacion: p.organizacion || q.organizacion, rol: p.rol || q.rol,
+    fecha_inicio: fechas[0] || "", fecha_fin: deCv.fecha_fin ?? p.fecha_fin,
+    logros: uniq([...(p.logros || []), ...(q.logros || [])], 8), competencias: uniq([...(p.competencias || []), ...(q.competencias || [])], 10),
+    fuentes: [...new Map([...(p.fuentes || []), ...(q.fuentes || [])].map((f) => [f.url, f])).values()].slice(0, 8),
+    origen: origenes.has("cv") && origenes.has("internet") ? "cv+internet" : origenes.has("cv") ? "cv" : "internet",
+    confianza: ["alta", "media", "baja"].find((c) => c === p.confianza || c === q.confianza) || p.confianza,
+    estado: p.estado, evidencia_id: p.evidencia_id || q.evidencia_id || null,
+    _absorbe: [...(p._absorbe || []), ...(q._absorbe || []), ...(q.evidencia_id && p.evidencia_id && q.evidencia_id !== p.evidencia_id ? [q.evidencia_id] : [])],
+  };
+}
+/** Merges one evidence into another: proofs, texts, links to the tree and the best assessment, in one card. */
+function unirEvidencias(a, b) {
+  const n = structuredClone(a), seen = new Set((n.artefactos || []).map((x) => x.path || x.url));
+  n.artefactos = [...(n.artefactos || []), ...(b.artefactos || []).filter((x) => !seen.has(x.path || x.url))];
+  for (const [k, t] of Object.entries(b.evidencias || {})) if ((t || "").length > (n.evidencias?.[k] || "").length) n.evidencias = { ...n.evidencias, [k]: t };
+  n.vinculos = { ...(n.vinculos || {}) };
+  for (const [k, ids] of Object.entries(b.vinculos || {})) n.vinculos[k] = [...new Set([...(n.vinculos[k] || []), ...ids])];
+  n.criterios = { validez: Math.max(clamp03(a.criterios?.validez), clamp03(b.criterios?.validez)), suficiencia: Math.max(clamp03(a.criterios?.suficiencia), clamp03(b.criterios?.suficiencia)) };
+  n.horas = Math.max(num(a.horas), num(b.horas));
+  if (!n.oficial && b.oficial) n.oficial = b.oficial;
+  if (n.verificacion?.estado !== "confirmada" && b.verificacion?.estado && b.verificacion.estado !== "sin solicitar") n.verificacion = b.verificacion;
+  n.dialogue = [...(a.dialogue || []), ...(b.dialogue || [])];
+  if (!n.acreditacion_origen && b.acreditacion_origen) n.acreditacion_origen = b.acreditacion_origen;
+  n.falta = n.oficial || n.criterios.suficiencia >= 2 ? "" : n.falta || b.falta;
+  return n;
+}
+/** Groups the track record's duplicates and merges each group (items and their evidences). Returns how many it merged. */
+async function consolidarTrayectoria() {
+  const items = tray().items || [];
+  const grupos = [];
+  for (const x of items) {
+    const g = grupos.find((gr) => gr.some((y) => mismaExperiencia(x, y)));
+    if (g) g.push(x); else grupos.push([x]);
+  }
+  if (grupos.length === items.length) return 0;
+  const nuevos = [];
+  for (const g of grupos) {
+    const u = g.reduce((acc, x) => unirItems(acc, x));
+    const absorbe = u._absorbe || []; delete u._absorbe;
+    if (absorbe.length && u.evidencia_id) {
+      let base = evidences.find((e) => e.id === u.evidencia_id);
+      for (const id of absorbe) {
+        const otra = evidences.find((e) => e.id === id);
+        if (!base || !otra) continue;
+        base = unirEvidencias(base, otra);
+        await sb.from("evidencias").delete().eq("id", otra.id); // files stay: they now belong to the merged evidence
+        evidences = evidences.filter((e) => e.id !== otra.id);
+      }
+      if (base) await saveEvidence(base);
+    }
+    nuevos.push(u);
+  }
+  await updatePerfil({ trayectoria: { ...tray(), items: nuevos } });
+  return items.length - nuevos.length;
+}
+/** An evidence the person already has about this experience (e.g. from a certificate), so it isn't created twice. */
+function evidenciaDeExperiencia(x) {
+  return evidences.find((e) => e.tipo !== "trayectoria" && parecido(e.titulo, x.titulo) >= 0.7) || null;
+}
+
 function evidenceFromTray(x) {
   const t = tray(), delCv = (x.origen || "").includes("cv") && t.cv?.path;
   const ev = { texto: [x.rol && `Papel: ${x.rol}.`, x.organizacion && `Organización: ${x.organizacion}.`, x.descripcion, x.contexto].filter(Boolean).join(" ") };
@@ -1688,13 +1793,15 @@ async function runImport({ nombre, pistas = "", enlaces = [], cvFile = null, web
       cv = { path: a.path, name: cvFile.name };
     }
     const fin = await streamImport({ nombre, pistas, enlaces, cv, acepto: !!web }, logStep);
-    let t = fin.trayectoria, cargadas = 0;
-    perfil.trayectoria = t;
+    perfil.trayectoria = fin.trayectoria;
+    const unidas = await consolidarTrayectoria();
+    if (unidas) logStep(`Unificando lo repetido: ${unidas} experiencia${unidas === 1 ? "" : "s"} que aparecía${unidas === 1 ? "" : "n"} en varias fuentes`);
+    let t = tray(), cargadas = 0;
     const claras = t.items.filter((i) => i.estado === "pendiente" && i.confianza === "alta");
     for (const x of claras) {
       logStep(`Creando evidencias (${cargadas + 1} de ${claras.length})`);
-      const e = evidenceFromTray(x);
-      await saveEvidence(e);
+      const e = evidenciaDeExperiencia(x) || evidenceFromTray(x);
+      if (!evidences.some((i) => i.id === e.id)) await saveEvidence(e);
       t = { ...t, items: t.items.map((i) => (i.id === x.id ? { ...i, estado: "confirmada", auto: true, evidencia_id: e.id } : i)) };
       perfil.trayectoria = t;
       cargadas++;
@@ -1786,8 +1893,12 @@ function renderTrayectoria() {
 async function decideTray(x, accion, lote = false) {
   const t = tray();
   let evId = null;
-  if (accion === "si") { const e = evidenceFromTray(x); evId = e.id; await saveEvidence(e); if (!lote) vincularEnArbol(e); }
-  if (accion === "quitar" && x.evidencia_id) { const e = evidences.find((i) => i.id === x.evidencia_id); if (e) await deleteEvidence(e); }
+  if (accion === "si") {
+    const ya = evidenciaDeExperiencia(x);
+    if (ya) evId = ya.id;
+    else { const e = evidenceFromTray(x); evId = e.id; await saveEvidence(e); if (!lote) vincularEnArbol(e); }
+  }
+  if (accion === "quitar" && x.evidencia_id) { const e = evidences.find((i) => i.id === x.evidencia_id); if (e?.tipo === "trayectoria") await deleteEvidence(e); }
   const items = tray().items.map((i) => (i.id === x.id ? { ...i, estado: accion === "si" ? "confirmada" : "descartada", evidencia_id: evId, auto: false } : i));
   await updatePerfil({ trayectoria: { ...t, items } });
   return evId;
