@@ -6,7 +6,7 @@ const BUCKET = "artefactos";
 const MAX_FILE_BYTES = 25 * 1024 * 1024;
 /** Before choosing an official subject there are no learning outcomes to link evidence to. */
 const NO_OBJ = { universidad: "", titulacion: "", asignatura: "", ects: "", resultados: [], sinObjetivo: true };
-const EV_LABELS = { idea: "Qué aprendió", aplicacion: "Aplicación", argumentacion: "Argumentación", conexion: "Conexión con su experiencia", limites: "Límites y dudas", sintesis: "Síntesis final", texto: "Registro del diario", fidelidad: "Fidelidad al contenido", logros: "Logros", competencias: "Lo que demuestra" };
+const EV_LABELS = { idea: "Qué aprendió", aplicacion: "Aplicación", argumentacion: "Argumentación", conexion: "Conexión con su experiencia", limites: "Límites y dudas", sintesis: "Síntesis final", texto: "Registro del diario", fidelidad: "Fidelidad al contenido", logros: "Logros", competencias: "Lo que demuestra", contenidos: "Contenidos que acredita el documento oficial" };
 const CRIT = [["validez", "Validez"], ["autenticidad", "Autenticidad"], ["suficiencia", "Suficiencia"], ["vigencia", "Vigencia"]];
 const CONTEXTOS = ["Trabajo", "Voluntariado", "Formación no reglada", "Vida diaria / autodidacta"];
 
@@ -1008,7 +1008,7 @@ function renderEvidenceList(container, evs, obj, editable, { acId = null, acs = 
   if (!rev.length) { container.innerHTML = `<div class="empty">${editable ? "Aún no hay evidencias. Haz una entrevista o escribe en el diario rápido y aparecerán aquí con su valoración." : "Esta persona aún no tiene evidencias."}</div>`; return; }
   container.innerHTML = rev.map((e) => {
     const s = scoresOf(e), v = e.verificacion || {};
-    const vPill = v.estado === "confirmada" ? '<span class="pill ok">Confirmada por tercero</span>' : v.estado === "solicitada" ? '<span class="pill warn">Confirmación solicitada</span>' : '<span class="pill">Sin confirmar</span>';
+    const vPill = e.oficial ? `<span class="pill ok" title="${safe(e.oficial.tipo + " · " + e.oficial.emisor)}">🎓 Documento oficial</span>` : v.estado === "confirmada" ? '<span class="pill ok">Confirmada por tercero</span>' : v.estado === "solicitada" ? '<span class="pill warn">Confirmación solicitada</span>' : '<span class="pill">Sin confirmar</span>';
     const raTags = acId
       ? (e.resultados || []).map((id) => { const r = obj.resultados.find((x) => x.id === id); return `<span class="pill ra" title="${safe(r?.texto || "Este resultado ya no está en la asignatura")}">${safe(id)}</span>`; }).join("") || '<span class="pill">Sin resultado vinculado</span>'
       : acs.filter((ac) => e.vinculos?.[ac.id]?.length).map((ac) => `<button class="pill ra" type="button" data-ac="${safe(ac.id)}" title="${safe(e.vinculos[ac.id].join(", "))}">◎ ${safe(subjectOf(ac).asignatura)}</button>`).join("") || `<span class="pill">${acs.length ? "Todavía no cuenta para ninguna acreditación" : "Sin acreditación"}</span>`;
@@ -1020,7 +1020,7 @@ function renderEvidenceList(container, evs, obj, editable, { acId = null, acs = 
       : `<button class="pill" data-act="open" data-path="${safe(a.path)}">${a.origen === "drive" ? "🗂" : a.origen === "cv" ? "📄" : "📎"} ${safe(a.name)}</button>`).join("");
     const lecturas = (e.artefactos || []).filter((a) => a.lectura).map((a) => a.lectura.error
       ? `<li><b>${safe(a.name)}:</b> Lumen no pudo leerlo. ${safe(a.lectura.error)}</li>`
-      : `<li><b>${safe(a.name)}:</b> ${safe(a.lectura.que_es)}${a.lectura.resultados?.length ? ` Respalda ${safe(a.lectura.resultados.join(", "))}.` : ""} <span class="subtle">Autoría: ${safe(a.lectura.autoria)}${a.lectura.notas ? " · " + safe(a.lectura.notas) : ""}</span></li>`).join("");
+      : `<li><b>${safe(a.name)}:</b> ${a.lectura.oficial ? `<span class="pill ${a.lectura.oficial.coincide_titular === "no" ? "warn" : "ok"}">🎓 ${safe(a.lectura.oficial.tipo)} · ${safe(a.lectura.oficial.emisor)}${a.lectura.oficial.titular ? " · a nombre de " + safe(a.lectura.oficial.titular) : ""}${a.lectura.oficial.coincide_titular === "no" ? " · no coincide contigo" : ""}</span> ` : ""}${safe(a.lectura.que_es)}${a.lectura.resultados?.length ? ` Respalda ${safe(a.lectura.resultados.join(", "))}.` : ""} <span class="subtle">Autoría: ${safe(a.lectura.autoria)}${a.lectura.notas ? " · " + safe(a.lectura.notas) : ""}</span></li>`).join("");
     const verif = !editable && v.nombre ? `<p><strong>Confirmación:</strong> ${safe(v.nombre)}${v.rol ? " (" + safe(v.rol) + ")" : ""}${v.contacto ? " · " + safe(v.contacto) : ""} · ${safe(v.estado)}</p>` : "";
     const id = safe(e.id);
     return `<article class="card">
@@ -1029,7 +1029,10 @@ function renderEvidenceList(container, evs, obj, editable, { acId = null, acs = 
       ${lecturas ? `<ul class="lecturas"><li class="subtle">Revisión de las pruebas por Lumen</li>${lecturas}</ul>` : ""}
       <div class="vasc">${CRIT.map(([k, l]) => `<div>${l} ${s[k]}/3${dots(s[k])}</div>`).join("")}</div>
       ${e.falta ? `<div class="falta">Le falta: ${safe(e.falta)}</div>` : ""}
-      ${editable && s.suficiencia < 2 && !quickState[e.id] ? `<div class="row-actions" style="margin-top:8px"><button class="btn small accent" data-act="quick" data-id="${id}">Completar con 3 preguntas</button></div>` : ""}
+      ${editable && !quickState[e.id] && (s.suficiencia < 2 || !e.oficial) ? `<div class="row-actions" style="margin-top:8px">
+        ${e.oficial ? "" : `<label class="btn small${esFormacion(e) ? " accent" : ""}" for="cert-${id}">🎓 ${safe(certLabel(e))}</label><input type="file" id="cert-${id}" data-act="upload" data-clase="acreditativo" data-id="${id}" accept=".pdf,.png,.jpg,.jpeg,.webp,application/pdf,image/*" class="visually-hidden">`}
+        ${s.suficiencia < 2 ? `<button class="btn small${esFormacion(e) && !e.oficial ? "" : " accent"}" data-act="quick" data-id="${id}">Completar con 3 preguntas</button>` : ""}
+        <span class="toast" id="cmsg-${id}" aria-live="polite"></span></div>` : ""}
       ${editable ? quickHtml(e) : ""}
       <details class="more" data-id="${id}"${open.has(e.id) ? " open" : ""}>
         <summary>${editable ? "Contenido, pruebas y confirmación" : "Contenido"}</summary>
@@ -1135,9 +1138,10 @@ async function onEvidenceClick(ev) {
 async function onEvidenceChange(ev) {
   const inp = ev.target.closest('input[data-act="upload"]'); if (!inp) return;
   const f = inp.files?.[0], e = evidences.find((x) => x.id === inp.dataset.id); if (!f || !e) return;
-  const say = (t) => { const m = $("msg-" + e.id); if (m) m.textContent = t; };
-  say("Subiendo…");
-  try { await addArtefact(e.id, await uploadFile(f, e.id)); } catch (err) { say(err.message); }
+  const clase = inp.dataset.clase || "";
+  const say = (t) => { const m = $((clase ? "cmsg-" : "msg-") + e.id); if (m) m.textContent = t; };
+  say(clase ? "Subiendo el documento…" : "Subiendo…");
+  try { await addArtefact(e.id, { ...(await uploadFile(f, e.id)), ...(clase ? { clase } : {}) }, say); } catch (err) { say(err.message); }
 }
 function onEvidenceInput(ev) {
   const el = ev.target.closest("[data-quick]"); if (!el) return;
@@ -1150,16 +1154,45 @@ for (const list of [$("evidenceList"), $("acEvidenceList")]) {
   list.addEventListener("input", onEvidenceInput);
 }
 /** Saves a proof on an evidence and asks Lumen to review it against the official learning outcomes. */
-async function addArtefact(evId, a) {
-  const say = (t) => { const m = $("msg-" + evId); if (m) m.textContent = t; };
+async function addArtefact(evId, a, sayFn) {
+  const say = (t) => { if (sayFn) return sayFn(t); const m = $("msg-" + evId); if (m) m.textContent = t; };
   let e = evidences.find((x) => x.id === evId);
   await saveEvidence({ ...structuredClone(e), artefactos: [...(e.artefactos || []), a] });
   say("Prueba añadida. Lumen la está revisando…");
   const lectura = await reviewArtefactAI(e, a);
   e = evidences.find((x) => x.id === evId);
   if (!e || !lectura) { say("Prueba añadida."); return; }
-  await saveEvidence({ ...structuredClone(e), artefactos: (e.artefactos || []).map((x) => (x.path === a.path && x.url === a.url && x.name === a.name ? { ...x, lectura } : x)) });
-  say(lectura.error ? "Prueba añadida (Lumen no pudo leerla)." : "Prueba añadida y revisada.");
+  const n = { ...structuredClone(e), artefactos: (e.artefactos || []).map((x) => (x.path === a.path && x.url === a.url && x.name === a.name ? { ...x, lectura } : x)) };
+  const o = lectura.oficial;
+  if (o && !e.oficial) conOficial(n, o);
+  await saveEvidence(n);
+  if (o && o.coincide_titular !== "no") vincularEnArbol(n);
+  say(lectura.error ? "Prueba añadida (Lumen no pudo leerla)."
+    : o?.coincide_titular === "no" ? `Lumen ha leído el documento, pero está a nombre de ${o.titular}. Comprueba que es el tuyo.`
+    : o ? `Documento oficial verificado: ${o.tipo} de ${o.emisor}.`
+    : a.clase ? "Lumen no lo reconoce como un documento oficial (título, certificado…). Queda guardado como prueba." : "Prueba añadida y revisada.");
+}
+/** Formal learning is proved by its official document: what it accredits feeds the evidence. */
+const esFormacion = (e) => e.fuente === "Formación" || /formaci|curso|grado|m[aá]ster|t[ií]tulo|certific|diploma|licenciatura|doctorado|bootcamp/i.test(`${e.titulo} ${e.contexto}`);
+function certLabel(e) {
+  if (esFormacion(e)) return "Aportar título o certificado";
+  if (e.contexto === "Trabajo") return "Aportar certificado de empresa o vida laboral";
+  if (e.contexto === "Voluntariado") return "Aportar certificado de voluntariado";
+  return "Aportar documento oficial";
+}
+function conOficial(n, o) {
+  if (o.coincide_titular === "no") { n.falta = `El documento aportado está a nombre de ${o.titular}. Si es tuyo, revisa el nombre de tu cuenta; si no, aporta el tuyo.`; return n; }
+  n.oficial = { tipo: o.tipo, emisor: o.emisor, fecha: o.fecha, horas: o.horas, ects: o.ects };
+  // Course-sized documents give the hours; a whole degree would swamp a single subject's workload, so it doesn't.
+  if (!num(n.horas)) n.horas = o.horas && o.horas <= 750 ? o.horas : o.ects && o.ects <= 30 ? o.ects * HOURS_PER_ECTS_MIN : 0;
+  if (o.fecha && n.tipo === "trayectoria") n.fecha = o.fecha;
+  if (o.contenidos?.length) n.evidencias = { ...(n.evidencias || {}), contenidos: o.contenidos.join("; ") };
+  n.criterios = { validez: Math.max(2, clamp03(n.criterios?.validez)), suficiencia: Math.max(2, clamp03(n.criterios?.suficiencia)) };
+  if (n.verificacion?.estado !== "confirmada") n.verificacion = { ...(n.verificacion || {}), nombre: o.emisor, rol: `Entidad que expide el documento oficial (${o.tipo.toLowerCase()})`, estado: "confirmada" };
+  n.falta = /universitario|académico/i.test(o.tipo) && !o.contenidos?.length
+    ? "Para que cuente en asignaturas concretas, aporta también el certificado académico con las asignaturas cursadas, o cuenta con 3 preguntas qué aprendiste y cómo lo aplicas."
+    : "";
+  return n;
 }
 async function reviewArtefactAI(e, a) {
   if (!aiOk) return null;
@@ -1451,7 +1484,7 @@ function evidenceFromTray(x) {
   return {
     id: uid(), kind: "evidence", tipo: "trayectoria", titulo: x.titulo, fuente: x.tipo, url: x.fuentes[0]?.url || "", fecha: fechaDe(x), createdAt: Date.now(),
     contexto: CONTEXTO_DE[x.tipo] || "", horas: 0, resultados: [], evidencias: ev,
-    criterios: { validez: 1, suficiencia: 1 }, falta: "Complétala con 3 preguntas o con una entrevista: qué aprendiste, cómo lo aplicaste y cuántas horas le dedicaste.",
+    criterios: { validez: 1, suficiencia: 1 }, falta: x.tipo === "Formación" ? "Aporta el título o certificado (PDF o foto) y Lumen lo verificará. Si quieres, cuenta además con 3 preguntas qué aprendiste y cómo lo aplicas." : "Complétala con 3 preguntas o con una entrevista: qué aprendiste, cómo lo aplicaste y cuántas horas le dedicaste. Si tienes un certificado que lo acredite, apórtalo.",
     artefactos: [
       ...x.fuentes.map((f) => ({ name: f.titulo.slice(0, 120), url: f.url, origen: "internet", subidoEl: new Date().toISOString() })),
       ...(delCv ? [{ name: t.cv.name || "Currículum", path: t.cv.path, origen: "cv", subidoEl: new Date().toISOString() }] : []),
