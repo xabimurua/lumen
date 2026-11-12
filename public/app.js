@@ -405,9 +405,9 @@ function useChat(key) {
 function greet(key) {
   if (key === "hoy") {
     if (!evidences.length && !tray().buscada) {
-      bubble(`Hola${perfil.nombre ? ", " + perfil.nombre.split(" ")[0] : ""}. Soy Lumen. Te ayudo a convertir lo que aprendes cada día en evidencias que una universidad pueda reconocer.\n\nCuéntame algo que hayas hecho o aprendido y te haré preguntas hasta tener lo que pide un expediente: qué sabes hacer, un caso real, horas, un producto que lo pruebe y alguien que pueda confirmarlo.\n\nSi prefieres, empiezo cargando tu experiencia: tu currículum, tus títulos o lo que haya sobre ti en internet.`);
+      bubble(`Hola${perfil.nombre ? ", " + perfil.nombre.split(" ")[0] : ""}. Soy Lumen. Te ayudo a convertir lo que aprendes cada día en evidencias que una universidad pueda reconocer.\n\nCuéntame algo que hayas hecho o aprendido y te haré preguntas hasta tener lo que pide un expediente: qué sabes hacer, un caso real, horas, un producto que lo pruebe y alguien que pueda confirmarlo.\n\nSi prefieres, empiezo cargando tu experiencia: tu currículum, lo que haya sobre ti en internet o los títulos y certificados que ya tienes.`);
       stage = "start"; setPhase();
-      choices(["Cargar mi experiencia", "Empezar a documentar", "¿Qué es Lumen?"]);
+      choices(["Cargar mi experiencia", "Subir títulos y certificados", "Empezar a documentar", "¿Qué es Lumen?"]);
       return;
     }
     proponer(`Hola${perfil.nombre ? ", " + perfil.nombre.split(" ")[0] : ""}. Lo que documentes aquí queda en tu trayectoria y lo vinculo a las acreditaciones de tu árbol.`);
@@ -521,6 +521,7 @@ async function submit(value) {
   if (value === "Ver propuestas de acreditación") { show("arbol"); $("propSection").scrollIntoView(); return; }
   if (value === "Cargar mi experiencia") { show("trayectoria"); return; }
   if (value === "¿Qué es Lumen?") { show("acerca"); return; }
+  if (value === "Subir títulos y certificados") { show("evidencias"); $("certDrop").scrollIntoView({ behavior: "smooth", block: "center" }); return; }
   if (!chatAc() && (stage === "start" || stage === "done") && value !== "Empezar a documentar") {
     const c = cycleCards().find((x) => x.cta === value);
     if (c) { c.go(); return; }
@@ -1058,7 +1059,7 @@ function renderEvidenceList(container, evs, obj, editable, { acId = null, acs = 
     const verif = !editable && v.nombre ? `<p><strong>Confirmación:</strong> ${safe(v.nombre)}${v.rol ? " (" + safe(v.rol) + ")" : ""}${v.contacto ? " · " + safe(v.contacto) : ""} · ${safe(v.estado)}</p>` : "";
     const id = safe(e.id);
     return `<article class="card">
-      <div class="card-head"><div style="min-width:0"><b>${safe(e.titulo)}</b><small>${e.tipo === "diario" ? "Diario" : e.tipo === "trayectoria" ? "Trayectoria" : "Entrevista"} · ${safe(fmtDate(e.fecha))}${e.contexto ? " · " + safe(e.contexto) : ""}${e.horas ? " · " + fmtN(num(e.horas)) + " h" : ""}</small></div>${vPill}</div>
+      <div class="card-head"><div style="min-width:0"><b>${safe(e.titulo)}</b><small>${e.tipo === "diario" ? "Diario" : e.tipo === "trayectoria" ? "Trayectoria" : e.tipo === "documento" ? "Documento oficial" : "Entrevista"} · ${safe(fmtDate(e.fecha))}${e.contexto ? " · " + safe(e.contexto) : ""}${e.horas ? " · " + fmtN(num(e.horas)) + " h" : ""}</small></div>${vPill}</div>
       <div class="chips">${raTags}${arts}</div>
       ${lecturas ? `<ul class="lecturas"><li class="subtle">Revisión de las pruebas por Lumen</li>${lecturas}</ul>` : ""}
       ${oficialValido(e) ? `<div class="oficial-box"><b>🎓 Acreditado con documento oficial</b><span>${safe(e.oficial.tipo)} · ${safe(e.oficial.emisor)}${e.oficial.fecha ? " · " + safe(fmtDate(e.oficial.fecha)) : ""}${e.oficial.codigo ? ` · código de verificación <code>${safe(e.oficial.codigo)}</code>` : ""}</span><small class="subtle">No hace falta valorarlo con criterios: el documento oficial ya prueba el aprendizaje. Solo queda vincularlo a las acreditaciones donde cuente.</small></div>` : `<div class="vasc" title="Cómo valoraría una universidad esta evidencia">${CRIT.map(([k, l]) => `<div title="${safe(CRIT_INFO[k])}">${l} ${s[k]}/3${dots(s[k])}</div>`).join("")}</div>
@@ -1207,6 +1208,67 @@ async function addArtefact(evId, a, sayFn) {
     : o ? `Documento oficial verificado: ${o.tipo} de ${o.emisor}.`
     : a.clase ? "Lumen no lo reconoce como un documento oficial (título, certificado…). Queda guardado como prueba." : "Prueba añadida y revisada.");
 }
+/* ---------- Titles and certificates the person already has ---------- */
+const CONTEXTO_DOC = { "Certificado de empresa": "Trabajo", "Vida laboral": "Trabajo", "Certificado de voluntariado": "Voluntariado", "Título o certificado de formación": "Formación no reglada", "Certificado de idiomas": "Formación no reglada" };
+/** An existing evidence about the same thing (e.g. found in the track record), so the document completes it instead of duplicating it. */
+function evidenciaParecida(titulo) {
+  const w = new Set(concepts(titulo, 12));
+  if (!w.size) return null;
+  let best = null, bestN = 0;
+  for (const e of evidences) {
+    const n = concepts(e.titulo, 12).filter((x) => w.has(x)).length;
+    if (n > bestN) { best = e; bestN = n; }
+  }
+  return bestN >= 2 || (bestN === 1 && w.size <= 2) ? best : null;
+}
+let subiendoCerts = false;
+async function subirCertificados(files) {
+  if (subiendoCerts || !files.length) return;
+  const log = $("certLog"); log.hidden = false;
+  if (!aiOk) { log.innerHTML = '<li class="warn">La IA no está disponible ahora mismo: inténtalo en unos minutos.</li>'; return; }
+  subiendoCerts = true;
+  const linea = (f) => { const li = document.createElement("li"); li.textContent = `${f.name}: leyendo…`; log.prepend(li); return li; };
+  for (const f of [...files].slice(0, 15)) {
+    const li = linea(f), id = uid();
+    try {
+      if (!/\.(pdf|png|jpe?g|webp)$/i.test(f.name) && !/^image\//.test(f.type)) throw new Error("sube el documento en PDF o como foto.");
+      const a = { ...(await uploadFile(f, id, "certificados")), clase: "acreditativo" };
+      const lectura = await (await api("/api/artefacto", { path: a.path, nombre: f.name, evidencia: { titulo: f.name, resumen: "Documento que la persona aporta como título o certificado de lo que ya sabe." } })).json();
+      const o = lectura.oficial;
+      if (!o) { await sb.storage.from(BUCKET).remove([a.path]); li.className = "warn"; li.textContent = `${f.name}: no parece un título ni un certificado oficial (${String(lectura.que_es || "").replace(/\.\s*$/, "")}). No lo he guardado; si es una prueba de algo que hiciste, adjúntalo a esa evidencia.`; continue; }
+      if (o.coincide_titular === "no") { await sb.storage.from(BUCKET).remove([a.path]); li.className = "warn"; li.textContent = `${f.name}: está a nombre de ${o.titular}, no al tuyo. No lo he guardado.`; continue; }
+      const art = { ...a, lectura };
+      const previa = evidenciaParecida(o.titulo_acreditado || "");
+      let n;
+      if (previa?.oficial) {
+        n = { ...structuredClone(previa), artefactos: [...(previa.artefactos || []), art] };
+        li.textContent = `${f.name}: ✓ ${o.tipo} de ${o.emisor}. «${previa.titulo}» ya estaba acreditada; he añadido este documento a sus pruebas.`;
+      } else if (previa) {
+        n = conOficial({ ...structuredClone(previa), artefactos: [...(previa.artefactos || []), art] }, o);
+        li.textContent = `${f.name}: ✓ ${o.tipo} de ${o.emisor}. Lo he añadido a tu evidencia «${previa.titulo}», que ya queda acreditada.`;
+      } else {
+        n = conOficial({
+          id, kind: "evidence", tipo: "documento", titulo: o.titulo_acreditado || o.tipo, fuente: "Formación", url: "", fecha: o.fecha || today(), createdAt: Date.now(),
+          contexto: CONTEXTO_DOC[o.tipo] || "", horas: 0, resultados: [], evidencias: { texto: lectura.que_es },
+          criterios: { validez: 2, suficiencia: 2 }, falta: "", artefactos: [art],
+          verificacion: { nombre: "", rol: "", contacto: "", estado: "sin solicitar" }, dialogue: [], ai: true,
+        }, o);
+        li.textContent = `${f.name}: ✓ ${o.tipo} de ${o.emisor}. Creada la evidencia «${n.titulo}».`;
+      }
+      li.className = "ok";
+      await saveEvidence(n);
+      vincularEnArbol(n);
+    } catch (e) { aiProblem(e); li.className = "warn"; li.textContent = `${f.name}: ${e.message}`; }
+  }
+  subiendoCerts = false;
+  maybeAutoPropose();
+}
+$("certFiles").addEventListener("change", (ev) => { const fs = [...(ev.target.files || [])]; ev.target.value = ""; subirCertificados(fs); });
+for (const type of ["dragover", "dragleave", "drop"]) $("certDrop").addEventListener(type, (ev) => {
+  ev.preventDefault(); $("certDrop").classList.toggle("over", type === "dragover");
+  if (type === "drop" && ev.dataTransfer?.files?.length) subirCertificados([...ev.dataTransfer.files]);
+});
+
 /** Formal learning is proved by its official document: what it accredits feeds the evidence. */
 const esFormacion = (e) => e.fuente === "Formación" || /formaci|curso|grado|m[aá]ster|t[ií]tulo|certific|diploma|licenciatura|doctorado|bootcamp/i.test(`${e.titulo} ${e.contexto}`);
 function certLabel(e) {

@@ -180,8 +180,18 @@
     <!-- EVIDENCIAS -->
     <section id="evidencias" class="view">
       <div class="full">
+        <h2>Sube tus títulos y certificados</h2>
+        <p class="note">Títulos universitarios, certificados académicos, de idiomas o de cursos, certificados de empresa, vida laboral, certificados de voluntariado… Lumen lee cada uno, comprueba que está a tu nombre y quién lo expide, y lo convierte en una evidencia acreditada (o lo añade a la que ya tengas sobre lo mismo).</p>
+        <label class="drop" for="certFiles" id="certDrop">
+          <b>Elige los documentos o arrástralos aquí</b>
+          <span>PDF o foto · puedes subir varios a la vez</span>
+        </label>
+        <input type="file" id="certFiles" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,application/pdf,image/*" class="visually-hidden">
+        <ul class="cert-log" id="certLog" hidden></ul>
+      </div>
+      <div class="full">
         <h2>Mis evidencias</h2>
-        <p class="note">Cada evidencia se valora con cuatro criterios. <b>Validez</b> y <b>suficiencia</b> las estima Lumen a partir de lo que cuentas. <b>Autenticidad</b> sube cuando adjuntas un producto y cuando alguien confirma tu aprendizaje. <b>Vigencia</b> depende de cuándo ocurrió.</p>
+        <p class="note">Cada evidencia se valora con cuatro criterios: <b>validez</b> y <b>suficiencia</b> las estima Lumen a partir de lo que cuentas, <b>autenticidad</b> sube cuando adjuntas un producto o alguien confirma tu aprendizaje, y <b>vigencia</b> depende de cuándo ocurrió. Las que tienen un título o certificado oficial ya están acreditadas.</p>
         <div id="evidenceList" class="items"></div>
         <button class="btn primary" data-go-chat>＋ Nueva entrevista</button>
       </div>
