@@ -933,25 +933,49 @@ function enterApp() {
   if (pendingTrace) { const p = pendingTrace; pendingTrace = null; setTimeout(() => autoTraceOnSignup(p), 0); }
 }
 
-/* ================= Guide: where you are and what comes next ================= */
-function guideSteps() {
-  const pend = pendientes().length, cargada = !!tray().buscada || evidences.length > 0;
+/* ================= The learning cycle: four things you can do at any time ================= */
+// Not a sequence: experience, accreditations, strengthening and presenting feed each other, and the person
+// can go back to any of them whenever they like. Lumen only highlights the one that would help most now.
+function cycleCards() {
+  const items = tray().items || [], pend = pendientes().length, nExp = evidences.length;
   const prog = acreditaciones.map((ac) => ({ ac, o: subjectOf(ac), p: leafProgress(ac) })).filter((x) => x.p.sts.length);
-  const mejor = [...prog].sort((a, b) => b.p.pct - a.p.pct)[0], abierta = prog.filter((x) => x.p.pct < 100).sort((a, b) => b.p.pct - a.p.pct)[0];
-  const flojas = evidences.filter((e) => scoresOf(e).suficiencia < 2);
-  return [
-    { t: "Carga tu experiencia", done: cargada, d: "Sube tu currículum o deja que Lumen te busque en internet: en unos minutos tendrás tu trayectoria convertida en evidencias.", cta: "Cargar mi experiencia", go: () => show("trayectoria") },
-    { t: "Revisa lo encontrado", done: cargada && !pend, d: `Hay ${pend} experiencia${pend === 1 ? "" : "s"} que Lumen no está seguro de que sea${pend === 1 ? "" : "n"} tuya${pend === 1 ? "" : "s"}.`, cta: "Revisar", go: () => { show("trayectoria"); $("trayReview").scrollIntoView(); } },
-    { t: "Crea tu árbol de acreditaciones", done: acreditaciones.length > 0, d: "Elige una o varias asignaturas reales de universidades donde tu experiencia puede contar. Cada una tendrá su propia conversación, sus evidencias y su recorrido.", cta: "Ver propuestas", go: () => show("arbol") },
-    { t: "Completa tus evidencias", done: prog.length > 0 && !abierta, d: flojas.length ? `${flojas.length} evidencia${flojas.length === 1 ? "" : "s"} necesita${flojas.length === 1 ? "" : "n"} más detalle. Con 3 preguntas por evidencia basta.` : abierta ? `En «${abierta.o.asignatura}» llevas un ${abierta.p.pct} %. Sigue en su conversación.` : "Añade pruebas y confirmaciones a tus evidencias.", cta: flojas.length ? "Completar evidencias" : "Seguir", go: () => (flojas.length ? (show("evidencias"), openQuick(flojas[0].id)) : abierta ? openAcreditacion(abierta.ac.id) : show("arbol")) },
-    { t: "Descarga tu expediente", done: false, d: mejor ? `Descarga el expediente de «${mejor.o.asignatura}» para presentarlo a la universidad.` : "Cuando tengas una acreditación, podrás descargar su expediente.", cta: "Ver expediente", go: () => (mejor ? openAcreditacion(mejor.ac.id, "exp") : show("arbol")) },
+  const cerca = prog.filter((x) => x.p.pct < 100).sort((a, b) => b.p.pct - a.p.pct)[0], mejor = [...prog].sort((a, b) => b.p.pct - a.p.pct)[0];
+  const enArbolIds = new Set(acreditaciones.flatMap((ac) => evsDe(ac.id).map((e) => e.id)));
+  const flojas = evidences.filter((e) => scoresOf(e).suficiencia < 2).sort((a, b) => enArbolIds.has(b.id) - enArbolIds.has(a.id) || (a.fecha < b.fecha ? 1 : -1));
+  const nuevasProp = nuevasLumen().filter((p) => !enArbol(p.asignatura_id)).length;
+  const cards = [
+    { k: "exp", icon: "◴", t: "Tu experiencia", m: nExp ? `${nExp} evidencia${nExp === 1 ? "" : "s"}${items.length ? ` · ${items.filter((x) => x.estado === "confirmada").length} de tu trayectoria` : ""}` : "Aún vacía",
+      d: pend ? `Lumen encontró ${pend} experiencia${pend === 1 ? "" : "s"} que tienes que confirmar.` : "Documenta algo nuevo, súbelo al diario o carga tu currículum.",
+      cta: pend ? `Revisar ${pend}` : nExp ? "Documentar algo" : "Cargar mi experiencia",
+      go: () => (pend ? (show("trayectoria"), $("trayReview").scrollIntoView()) : nExp ? (show("agente") && !busy && (bubble("Quiero documentar algo nuevo.", "user"), begin())) : show("trayectoria")),
+      prio: pend ? 1 : nExp < 2 ? 2 : 9 },
+    { k: "arbol", icon: "◎", t: "Tus acreditaciones", m: acreditaciones.length ? `${acreditaciones.length} en tu árbol` : "Ninguna todavía",
+      d: nuevasProp ? `Lumen te propone ${nuevasProp} asignatura${nuevasProp === 1 ? "" : "s"} nueva${nuevasProp === 1 ? "" : "s"}.` : acreditaciones.length ? "Añade otra cuando quieras, de cualquier tema." : "Elige dónde puede contar lo que sabes.",
+      cta: nuevasProp ? "Ver propuestas" : acreditaciones.length ? "Ver mi árbol" : "Elegir acreditación", go: () => show("arbol"),
+      prio: !acreditaciones.length && nExp >= 2 ? 3 : nuevasProp ? 5 : 9 },
+    { k: "reforzar", icon: "✎", t: "Reforzar evidencias", m: flojas.length ? `${flojas.length} con poco detalle` : "Todas con buen detalle",
+      d: flojas.length ? `Por ejemplo, «${flojas[0].titulo}». Con 3 preguntas basta.` : cerca ? `En «${cerca.o.asignatura}» añade pruebas o la confirmación de alguien.` : "Añade pruebas y confirmaciones cuando las tengas.",
+      cta: flojas.length ? "Reforzar una" : cerca ? "Ver qué falta" : "Mis evidencias",
+      go: () => (flojas.length ? (show("evidencias"), openQuick(flojas[0].id)) : cerca ? openAcreditacion(cerca.ac.id, "ruta") : show("evidencias")),
+      prio: flojas.length && acreditaciones.length ? 4 : 8 },
+    { k: "presentar", icon: "◈", t: "Presentar", m: mejor ? `«${mejor.o.asignatura}» al ${mejor.p.pct} %` : "Sin acreditación aún",
+      d: mejor ? (mejor.p.pct === 100 ? "Su expediente está listo para la universidad." : `${mejor.p.ready} de ${mejor.p.sts.length} resultados listos. Puedes descargar el expediente cuando quieras.`) : "Cuando tengas una acreditación, verás aquí su expediente.",
+      cta: mejor ? "Ver expediente" : "Ver mi árbol", go: () => (mejor ? openAcreditacion(mejor.ac.id, "exp") : show("arbol")),
+      prio: mejor?.p.pct === 100 ? 1 : cerca ? 6 : 9 },
   ];
+  const sug = [...cards].sort((a, b) => a.prio - b.prio)[0];
+  if (sug.prio < 9) sug.sug = true;
+  return cards;
 }
 function renderGuide() {
-  const steps = guideSteps(), now = steps.findIndex((x) => !x.done), cur = steps[now];
-  $("guia").innerHTML = `<ol data-resumen="Paso ${now + 1} de ${steps.length}">${steps.map((x, i) => `<li class="${x.done ? "done" : i === now ? "now" : ""}">${safe(x.t)}</li>`).join("")}</ol>
-    <div class="guide-next"><div style="min-width:0"><b>Siguiente paso: ${safe(cur.t)}</b><span>${safe(cur.d)}</span></div><button class="btn primary" id="guiaBtn">${safe(cur.cta)} →</button></div>`;
-  $("guiaBtn").onclick = cur.go;
+  const cards = cycleCards();
+  $("guia").innerHTML = `<div class="cycle-head"><b>Tu ciclo de aprendizaje</b><span>No hay un orden: cada cosa nueva que documentas alimenta tus acreditaciones, y puedes volver a cualquier parte cuando quieras.</span></div>
+    <div class="cycle">${cards.map((c, i) => `<div class="cycle-card${c.sug ? " sug" : ""}">
+      ${c.sug ? '<span class="cycle-sug">Sugerencia de Lumen</span>' : ""}
+      <div class="cycle-top"><span class="cycle-icon" aria-hidden="true">${c.icon}</span><b>${safe(c.t)}</b></div>
+      <strong>${safe(c.m)}</strong><span class="subtle">${safe(c.d)}</span>
+      <button class="btn small${c.sug ? " primary" : ""}" type="button" data-cycle="${i}">${safe(c.cta)} →</button></div>`).join("")}</div>`;
+  $("guia").querySelectorAll("[data-cycle]").forEach((b) => (b.onclick = () => cards[Number(b.dataset.cycle)].go()));
 }
 
 /* ================= Render ================= */
