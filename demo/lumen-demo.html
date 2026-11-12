@@ -298,6 +298,9 @@ a{color:var(--accent)}
 button.pill{cursor:pointer;font-family:inherit;border:1px solid transparent}
 button.pill:hover{border-color:var(--line)}
 @media(max-width:720px){.leaves{padding-left:0;border-left:0}.mini-leaf{grid-template-columns:minmax(0,1fr) 50px auto}}
+.oficial-box{display:grid;gap:3px;border:1px solid var(--good);background:var(--good-bg);border-radius:12px;padding:12px 14px;margin-top:12px;font-size:13px}
+.oficial-box b{color:var(--good)}
+.oficial-box code{font-size:12px}
 
 .demo-banner{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:var(--lamp);color:#152038;font-size:12px;font-weight:700;text-align:center;padding-block:7px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
 .demo-banner button{background:none;border:0;text-decoration:underline;font-weight:700;color:inherit;padding:0}
@@ -1171,7 +1174,10 @@ function autenticidad(e) {
   if (e.contexto && e.fecha && e.horas > 0) return 1; return 0;
 }
 function vigencia(e) { const y = yearsAgo(e.fecha); return y <= 2 ? 3 : y <= VIGENCIA_YEARS ? 2 : y <= 10 ? 1 : 0; }
-function scoresOf(e) { return { validez: clamp03(e.criterios?.validez), suficiencia: clamp03(e.criterios?.suficiencia), autenticidad: autenticidad(e), vigencia: vigencia(e) }; }
+/** An official certificate (degree, language certificate, course…) is already the proof: it is not scored like a
+    self-reported experience, and it does not go stale (a degree or a C1 certificate keeps its validity). */
+const oficialValido = (e) => !!e.oficial;
+function scoresOf(e) { if (oficialValido(e)) return { validez: 3, suficiencia: 3, autenticidad: 3, vigencia: 3 }; return { validez: clamp03(e.criterios?.validez), suficiencia: clamp03(e.criterios?.suficiencia), autenticidad: autenticidad(e), vigencia: vigencia(e) }; }
 function outcomeStatus(ra, evs) {
   const linked = evs.filter((e) => (e.resultados || []).includes(ra.id));
   const checks = {
@@ -1959,8 +1965,8 @@ function renderEvidenceList(container, evs, obj, editable, { acId = null, acs = 
       <div class="card-head"><div style="min-width:0"><b>${safe(e.titulo)}</b><small>${e.tipo === "diario" ? "Diario" : e.tipo === "trayectoria" ? "Trayectoria" : "Entrevista"} · ${safe(fmtDate(e.fecha))}${e.contexto ? " · " + safe(e.contexto) : ""}${e.horas ? " · " + fmtN(num(e.horas)) + " h" : ""}</small></div>${vPill}</div>
       <div class="chips">${raTags}${arts}</div>
       ${lecturas ? `<ul class="lecturas"><li class="subtle">Revisión de las pruebas por Lumen</li>${lecturas}</ul>` : ""}
-      <div class="vasc" title="Cómo valoraría una universidad esta evidencia">${CRIT.map(([k, l]) => `<div title="${safe(CRIT_INFO[k])}">${l} ${s[k]}/3${dots(s[k])}</div>`).join("")}</div>
-      ${editable ? `<p class="vasc-help"><b>Cómo la valoraría una universidad (de 0 a 3).</b> ${safe(mejoraTexto(e, s))}</p>` : ""}
+      ${oficialValido(e) ? `<div class="oficial-box"><b>🎓 Acreditado con documento oficial</b><span>${safe(e.oficial.tipo)} · ${safe(e.oficial.emisor)}${e.oficial.fecha ? " · " + safe(fmtDate(e.oficial.fecha)) : ""}${e.oficial.codigo ? ` · código de verificación <code>${safe(e.oficial.codigo)}</code>` : ""}</span><small class="subtle">No hace falta valorarlo con criterios: el documento oficial ya prueba el aprendizaje. Solo queda vincularlo a las acreditaciones donde cuente.</small></div>` : `<div class="vasc" title="Cómo valoraría una universidad esta evidencia">${CRIT.map(([k, l]) => `<div title="${safe(CRIT_INFO[k])}">${l} ${s[k]}/3${dots(s[k])}</div>`).join("")}</div>
+      ${editable ? `<p class="vasc-help"><b>Cómo la valoraría una universidad (de 0 a 3).</b> ${safe(mejoraTexto(e, s))}</p>` : ""}`}
       ${e.falta ? `<div class="falta">Le falta: ${safe(e.falta)}</div>` : ""}
       ${editable && !quickState[e.id] && (s.suficiencia < 2 || !e.oficial) ? `<div class="row-actions" style="margin-top:8px">
         ${e.oficial ? "" : `<label class="btn small${esFormacion(e) ? " accent" : ""}" for="cert-${id}">🎓 ${safe(certLabel(e))}</label><input type="file" id="cert-${id}" data-act="upload" data-clase="acreditativo" data-id="${id}" accept=".pdf,.png,.jpg,.jpeg,.webp,application/pdf,image/*" class="visually-hidden">`}
@@ -2115,7 +2121,7 @@ function certLabel(e) {
 }
 function conOficial(n, o) {
   if (o.coincide_titular === "no") { n.falta = `El documento aportado está a nombre de ${o.titular}. Si es tuyo, revisa el nombre de tu cuenta; si no, aporta el tuyo.`; return n; }
-  n.oficial = { tipo: o.tipo, emisor: o.emisor, fecha: o.fecha, horas: o.horas, ects: o.ects };
+  n.oficial = { tipo: o.tipo, emisor: o.emisor, fecha: o.fecha, horas: o.horas, ects: o.ects, codigo: o.codigo_verificacion || "" };
   // Course-sized documents give the hours; a whole degree would swamp a single subject's workload, so it doesn't.
   if (!num(n.horas)) n.horas = o.horas && o.horas <= 750 ? o.horas : o.ects && o.ects <= 30 ? o.ects * HOURS_PER_ECTS_MIN : 0;
   if (o.fecha && n.tipo === "trayectoria") n.fecha = o.fecha;
@@ -2290,7 +2296,7 @@ function dossierHtml(obj, evs, nombre) {
 <p class="meta">${safe(fmtDate(e.fecha))} · ${safe(e.contexto || "Contexto sin indicar")} · ${fmtN(num(e.horas))} h · ${e.tipo === "diario" ? "Registro de diario" : "Entrevista reflexiva"}</p>
 <p><b>Resultados de aprendizaje:</b> ${(e.resultados || []).map(safe).join(", ") || "—"}</p>
 ${Object.entries(e.evidencias || {}).map(([k, t]) => `<p><b>${safe(EV_LABELS[k] || k)}:</b> ${safe(t)}</p>`).join("")}
-<p><b>Valoración preliminar:</b> validez ${s.validez}/3 · autenticidad ${s.autenticidad}/3 · suficiencia ${s.suficiencia}/3 · vigencia ${s.vigencia}/3</p>
+${oficialValido(e) ? `<p><b>Acreditación oficial:</b> ${safe(e.oficial.tipo)} expedido por ${safe(e.oficial.emisor)}${e.oficial.fecha ? " el " + safe(fmtDate(e.oficial.fecha)) : ""}${e.oficial.codigo ? " · código de verificación " + safe(e.oficial.codigo) : ""}</p>` : `<p><b>Valoración preliminar:</b> validez ${s.validez}/3 · autenticidad ${s.autenticidad}/3 · suficiencia ${s.suficiencia}/3 · vigencia ${s.vigencia}/3</p>`}
 <p><b>Pruebas adjuntas:</b> ${(e.artefactos || []).map((a) => safe(a.name)).join(", ") || "Ninguna"}</p>
 <p><b>Confirmación de tercero:</b> ${v.nombre ? safe(v.nombre) + (v.rol ? " (" + safe(v.rol) + ")" : "") + (v.contacto ? " · " + safe(v.contacto) : "") + " · " + safe(v.estado) : "No indicada"}</p></section>`;
   }).join("");
