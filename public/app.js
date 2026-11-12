@@ -21,7 +21,7 @@ const fmtN = (n) => (Math.round(n * 10) / 10).toLocaleString("es-ES");
 const byDate = (a, b) => (a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : 0);
 
 /* ================= Session and data ================= */
-let googleCfg = null, publicCfg = null;
+let googleCfg = null;
 let sb = null, session = null, perfil = null, objetivo = NO_OBJ, evidences = [], catalogo = [];
 /** The accreditation tree: one row per subject the person works towards, each with its own conversation and resources. */
 let acreditaciones = [], acActual = null, faltaTabla = false, vista = "agente";
@@ -33,7 +33,7 @@ function showScreen(name) {
 async function boot() {
   try {
     const cfg = await fetch("/api/config").then((r) => { if (!r.ok) throw new Error(); return r.json(); });
-    googleCfg = cfg.google || null; publicCfg = cfg;
+    googleCfg = cfg.google || null;
     sb = supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey, { auth: { persistSession: true, detectSessionInUrl: true, flowType: "implicit" } });
   } catch {
     $("loadingMsg").textContent = "Lumen no está disponible en este momento. Inténtalo de nuevo en unos minutos.";
@@ -945,7 +945,6 @@ function enterApp() {
     if (!pendingTrace && !perfil.trayectoria?.buscada && !evidences.length) show("trayectoria"); else show("agente");
   } else render();
   if (pendingTrace) { const p = pendingTrace; pendingTrace = null; setTimeout(() => autoTraceOnSignup(p), 0); }
-  alVolverDeLinkedin();
 }
 
 /* ================= What Lumen suggests next ================= */
@@ -1433,7 +1432,6 @@ function fillPerfil() {
   $("aName").value = perfil.nombre || ""; $("aShare").checked = !!perfil.compartir_con_coordinacion;
   $("aTitular").value = f.titular || ""; $("aLugar").value = f.lugar || ""; $("aLinkedin").value = f.linkedin_url || ""; $("aWeb").value = f.web || ""; $("aSobre").value = f.sobre || "";
   renderPerfil();
-  comprobarLinkedin();
 }
 function renderPerfil() {
   pintarAvatar($("pAvatar")); pintarAvatar($("avatar"));
@@ -1443,7 +1441,7 @@ function renderPerfil() {
   $("profileHead").innerHTML = `<div class="profile-top"><div class="avatar big" id="phAvatar"></div>
       <div style="min-width:0"><h2 style="margin:0">${safe(perfil.nombre || "Sin nombre")}</h2>
         <p class="subtle" style="margin:4px 0 0;font-size:14px">${safe([f.titular, f.lugar].filter(Boolean).join(" · ") || "Añade a qué te dedicas y dónde, más abajo.")}</p>
-        <div class="chips" style="margin-top:8px">${f.linkedin_url ? `<a class="pill" href="${safe(f.linkedin_url)}" target="_blank" rel="noopener">LinkedIn ↗</a>` : ""}${f.web ? `<a class="pill" href="${safe(f.web)}" target="_blank" rel="noopener">Web ↗</a>` : ""}${f.linkedin?.conectado ? '<span class="pill ok">Conectado con LinkedIn</span>' : ""}</div></div></div>
+        <div class="chips" style="margin-top:8px">${f.linkedin_url ? `<a class="pill" href="${safe(f.linkedin_url)}" target="_blank" rel="noopener">LinkedIn ↗</a>` : ""}${f.web ? `<a class="pill" href="${safe(f.web)}" target="_blank" rel="noopener">Web ↗</a>` : ""}</div></div></div>
     ${f.sobre ? `<p style="margin:14px 0 0;max-width:760px">${safe(f.sobre)}</p>` : ""}
     <div class="kpis" style="margin-top:16px">${[[evidences.length, "Evidencias"], [oficiales, "Con documento oficial"], [fmtN(horas) + " h", "Horas documentadas"], [acreditaciones.length, "Acreditaciones en tu árbol"], [mejor ? mejor.p.pct + " %" : "—", mejor ? "Avance de «" + mejor.o.asignatura + "»" : "Tu acreditación más avanzada"]].map(([v, l]) => `<div class="stat"><strong>${safe(v)}</strong><small>${safe(l)}</small></div>`).join("")}</div>`;
   pintarAvatar($("phAvatar"));
@@ -1482,52 +1480,6 @@ $("pFoto").addEventListener("change", async (ev) => {
 });
 $("pQuitarFoto").onclick = async () => { try { await updatePerfil({ avatar: "" }); renderPerfil(); $("pFotoMsg").textContent = "Foto quitada."; } catch { $("pFotoMsg").textContent = "No se pudo quitar."; } };
 
-/* LinkedIn: the person links their LinkedIn account (Sign In with LinkedIn) and Lumen brings their photo and name.
-   The button only appears when the LinkedIn provider is enabled in Supabase. */
-let linkedinActivo = null;
-async function comprobarLinkedin() {
-  if (linkedinActivo === null && publicCfg?.supabaseUrl) {
-    try { const r = await fetch(publicCfg.supabaseUrl + "/auth/v1/settings", { headers: { apikey: publicCfg.supabaseAnonKey } }); linkedinActivo = !!(await r.json()).external?.linkedin_oidc; }
-    catch { linkedinActivo = false; }
-  }
-  const conectado = (session.user.identities || []).some((i) => i.provider === "linkedin_oidc") || ficha().linkedin?.conectado;
-  $("pLinkedin").hidden = !linkedinActivo;
-  $("pLinkedin").lastChild.textContent = conectado ? " Volver a traer foto y nombre de LinkedIn" : " Traer foto y nombre de LinkedIn";
-  $("pLinkedinNota").textContent = linkedinActivo ? (conectado ? "Tu cuenta está conectada con LinkedIn. Lumen solo lee tu nombre y tu foto." : "Te pedirá entrar en LinkedIn y dar permiso. Lumen solo lee tu nombre y tu foto.") : "";
-}
-const LI_KEY = "lumen_linkedin_pendiente";
-$("pLinkedin").onclick = async () => {
-  const msg = $("pFotoMsg");
-  const conectado = (session.user.identities || []).some((i) => i.provider === "linkedin_oidc");
-  if (conectado) { await importarLinkedin(); return; }
-  try { localStorage.setItem(LI_KEY, "1"); } catch {}
-  msg.textContent = "Abriendo LinkedIn…";
-  const { error } = await sb.auth.linkIdentity({ provider: "linkedin_oidc", options: { redirectTo: location.origin } });
-  if (error) {
-    try { localStorage.removeItem(LI_KEY); } catch {}
-    msg.textContent = /manual linking/i.test(error.message) ? "Falta activar «Allow manual linking» en Supabase (Authentication → Sign In / Providers). Avisa a la coordinación." : "No se pudo conectar con LinkedIn. Inténtalo de nuevo.";
-  }
-};
-async function importarLinkedin() {
-  const msg = $("pFotoMsg");
-  msg.textContent = "Trayendo tu foto y tu nombre de LinkedIn…";
-  try {
-    const r = await (await api("/api/perfil", { accion: "linkedin" })).json();
-    await loadPerfil();
-    pintarAvatar($("avatar")); $("whoName").textContent = perfil.nombre || session.user.email;
-    if (vista === "cuenta") fillPerfil();
-    msg.textContent = r.foto ? "Listo: foto de LinkedIn guardada." : "Conectado con LinkedIn, pero no he podido traer tu foto (quizá no tienes una pública). Puedes subirla a mano.";
-  } catch (e) { msg.textContent = e.message; }
-}
-/** Back from LinkedIn: finish what the person started. */
-function alVolverDeLinkedin() {
-  let pendiente = false;
-  try { pendiente = localStorage.getItem(LI_KEY) === "1"; localStorage.removeItem(LI_KEY); } catch {}
-  if (!pendiente) return;
-  show("cuenta");
-  if ((session.user.identities || []).some((i) => i.provider === "linkedin_oidc")) importarLinkedin();
-  else $("pFotoMsg").textContent = "No se completó la conexión con LinkedIn.";
-}
 $("logout").onclick = async () => { await sb.auth.signOut(); location.reload(); };
 $("deleteAccount").onclick = async () => {
   const b = $("deleteAccount");

@@ -77,18 +77,6 @@ Las carpetas no se comparten enteras: la persona entra en la carpeta y elige los
 
 **Gmail no se conecta** a propósito: el permiso para leer el correo es restringido, exige una auditoría de seguridad de Google y daría acceso a todo el buzón. Para aportar un correo (por ejemplo, la confirmación de un responsable), se descarga como `.eml` («Descargar mensaje» en Gmail) o se guarda como PDF y se adjunta: Lumen lo lee igual.
 
-## 5 quater. Opcional: traer la foto y el nombre de LinkedIn
-
-En «Mi perfil», cada persona puede subir su foto o traerla de LinkedIn. El botón de LinkedIn solo aparece cuando está activado en Supabase:
-
-1. En **linkedin.com/developers** → **Create app**. Pon el nombre «Lumen», asocia una página de empresa de LinkedIn (es obligatorio) y sube el logo.
-2. En la pestaña **Products**, solicita **Sign In with LinkedIn using OpenID Connect** (se concede al momento).
-3. En la pestaña **Auth**, en **Authorized redirect URLs**, añade `https://TU-PROYECTO.supabase.co/auth/v1/callback` (la URL de tu proyecto de Supabase). Copia el **Client ID** y el **Primary Client Secret**.
-4. En Supabase → **Authentication → Sign In / Providers → LinkedIn (OIDC)**: actívalo y pega el Client ID y el Client Secret. Guarda.
-5. En esa misma página de Supabase, activa **Allow manual linking** (permite conectar LinkedIn a una cuenta que ya existe).
-
-Lumen solo pide a LinkedIn el nombre, la foto y el correo (permisos `openid profile email`).
-
 ## 6. Antes de abrir el piloto: lista de comprobación
 
 - [ ] `public/privacidad.html` sin ningún **[PENDIENTE]**, revisada por el delegado o la delegada de protección de datos.
