@@ -21,7 +21,7 @@ const fmtN = (n) => (Math.round(n * 10) / 10).toLocaleString("es-ES");
 const byDate = (a, b) => (a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : 0);
 
 /* ================= Session and data ================= */
-let googleCfg = null;
+let googleCfg = null, publicCfg = null;
 let sb = null, session = null, perfil = null, objetivo = NO_OBJ, evidences = [], catalogo = [];
 /** The accreditation tree: one row per subject the person works towards, each with its own conversation and resources. */
 let acreditaciones = [], acActual = null, faltaTabla = false, vista = "agente";
@@ -33,7 +33,7 @@ function showScreen(name) {
 async function boot() {
   try {
     const cfg = await fetch("/api/config").then((r) => { if (!r.ok) throw new Error(); return r.json(); });
-    googleCfg = cfg.google || null;
+    googleCfg = cfg.google || null; publicCfg = cfg;
     sb = supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey, { auth: { persistSession: true, detectSessionInUrl: true, flowType: "implicit" } });
   } catch {
     $("loadingMsg").textContent = "Lumen no está disponible en este momento. Inténtalo de nuevo en unos minutos.";
@@ -826,7 +826,7 @@ $("intentForm").addEventListener("submit", (ev) => {
 $("discoverBtn").onclick = () => runProposal("", $("discoverBtn"));
 
 /* ================= Views ================= */
-const TITLES = { agente: ["Plataforma de evidencias de aprendizaje", "¿Qué has aprendido hoy?"], trayectoria: ["Mi trayectoria", "Todo lo que ya has hecho, en un solo sitio."], evidencias: ["Evidencias", "Cada aprendizaje, con sus pruebas."], arbol: ["Mis acreditaciones", "Tu árbol de acreditaciones."], acreditacion: ["Mis acreditaciones", ""], coordinacion: ["Coordinación", "Seguimiento del piloto."], cuenta: ["Cuenta", "Tus datos, bajo tu control."], acerca: ["Qué es Lumen", "Del día a día al crédito."] };
+const TITLES = { agente: ["Plataforma de evidencias de aprendizaje", "¿Qué has aprendido hoy?"], trayectoria: ["Mi trayectoria", "Todo lo que ya has hecho, en un solo sitio."], evidencias: ["Evidencias", "Cada aprendizaje, con sus pruebas."], arbol: ["Mis acreditaciones", "Tu árbol de acreditaciones."], acreditacion: ["Mis acreditaciones", ""], coordinacion: ["Coordinación", "Seguimiento del piloto."], cuenta: ["Mi perfil", "Quién eres y lo que has construido."], acerca: ["Qué es Lumen", "Del día a día al crédito."] };
 function show(id) {
   if (id === "acreditacion" && !acDe(acActual)) id = "arbol";
   if ((id === "agente" || id === "acreditacion") && !useChat(id === "agente" ? "hoy" : acActual)) {
@@ -838,7 +838,7 @@ function show(id) {
   document.querySelectorAll(".view").forEach((v) => v.classList.toggle("on", v.id === id));
   document.querySelectorAll("[data-view]").forEach((b) => b.classList.toggle("on", b.dataset.view === (id === "acreditacion" ? "arbol" : id)));
   $("eyebrow").textContent = TITLES[id][0]; $("pagetitle").textContent = id === "acreditacion" ? objetivo.asignatura : TITLES[id][1];
-  if (id === "cuenta") { $("aName").value = perfil.nombre || ""; $("aShare").checked = !!perfil.compartir_con_coordinacion; }
+  if (id === "cuenta") fillPerfil();
   if (id === "coordinacion") { loadPeople(); loadCoordCatalog(); }
   render(); window.scrollTo(0, 0);
   return true;
@@ -935,7 +935,7 @@ let entered = false;
 function enterApp() {
   showScreen("app");
   $("whoName").textContent = perfil.nombre || session.user.email;
-  $("avatar").textContent = (perfil.nombre || session.user.email).split(/\s+/).map((w) => w[0]).slice(0, 2).join("").toUpperCase();
+  pintarAvatar($("avatar"));
   $("navCoord").hidden = perfil.role !== "coordinador";
   $("chatDrive").hidden = !googleCfg;
   $("dDate").value = today();
@@ -945,6 +945,7 @@ function enterApp() {
     if (!pendingTrace && !perfil.trayectoria?.buscada && !evidences.length) show("trayectoria"); else show("agente");
   } else render();
   if (pendingTrace) { const p = pendingTrace; pendingTrace = null; setTimeout(() => autoTraceOnSignup(p), 0); }
+  alVolverDeLinkedin();
 }
 
 /* ================= What Lumen suggests next ================= */
@@ -1304,13 +1305,13 @@ async function reviewArtefactAI(e, a) {
 /* ================= Coordination ================= */
 let people = [], selected = null, peopleAcs = [];
 async function loadPeople() {
-  const { data, error } = await sb.from("perfiles").select("user_id,nombre,objetivo,compartir_con_coordinacion").neq("user_id", session.user.id).eq("compartir_con_coordinacion", true).order("nombre");
+  const { data, error } = await sb.from("perfiles").select("*").neq("user_id", session.user.id).eq("compartir_con_coordinacion", true).order("nombre");
   if (error) { $("people").innerHTML = '<div class="empty">No se pudo cargar la lista.</div>'; return; }
   people = data;
   const r = people.length ? await sb.from("acreditaciones").select("user_id,asignatura_id").in("user_id", people.map((p) => p.user_id)) : { data: [] };
   peopleAcs = r.data || [];
   const resumen = (p) => { const acs = peopleAcs.filter((a) => a.user_id === p.user_id); return acs.length ? acs.map((a) => subjectOf(a).asignatura).join(" · ") : targetName(resolveObjetivo(p.objetivo)); };
-  $("people").innerHTML = people.length ? people.map((p) => `<button class="person${selected?.user_id === p.user_id ? " on" : ""}" data-person="${safe(p.user_id)}"><span><b>${safe(p.nombre || "Sin nombre")}</b><br><small class="subtle">${safe(resumen(p))}</small></span><span>→</span></button>`).join("") : '<div class="empty">Todavía nadie ha compartido su expediente.</div>';
+  $("people").innerHTML = people.length ? people.map((p) => `<button class="person${selected?.user_id === p.user_id ? " on" : ""}" data-person="${safe(p.user_id)}"><span class="person-who">${p.avatar ? `<img class="avatar small img" src="${safe(p.avatar)}" alt="">` : ""}<span><b>${safe(p.nombre || "Sin nombre")}</b><br><small class="subtle">${safe([p.ficha?.titular, resumen(p)].filter(Boolean).join(" · "))}</small></span></span><span>→</span></button>`).join("") : '<div class="empty">Todavía nadie ha compartido su expediente.</div>';
 }
 $("people").addEventListener("click", async (ev) => {
   const b = ev.target.closest("[data-person]"); if (!b) return;
@@ -1420,11 +1421,113 @@ $("reqList").addEventListener("click", async (ev) => {
 });
 
 /* ================= Account ================= */
+/* ================= My profile ================= */
+const iniciales = () => (perfil.nombre || session.user.email).split(/[\s@.]+/).filter(Boolean).map((w) => w[0]).slice(0, 2).join("").toUpperCase();
+function pintarAvatar(el) {
+  if (perfil.avatar) { el.innerHTML = ""; const img = new Image(); img.src = perfil.avatar; img.alt = ""; el.append(img); el.classList.add("img"); }
+  else { el.textContent = iniciales(); el.classList.remove("img"); }
+}
+const ficha = () => perfil.ficha || {};
+function fillPerfil() {
+  const f = ficha();
+  $("aName").value = perfil.nombre || ""; $("aShare").checked = !!perfil.compartir_con_coordinacion;
+  $("aTitular").value = f.titular || ""; $("aLugar").value = f.lugar || ""; $("aLinkedin").value = f.linkedin_url || ""; $("aWeb").value = f.web || ""; $("aSobre").value = f.sobre || "";
+  renderPerfil();
+  comprobarLinkedin();
+}
+function renderPerfil() {
+  pintarAvatar($("pAvatar")); pintarAvatar($("avatar"));
+  $("pQuitarFoto").hidden = !perfil.avatar;
+  const f = ficha(), horas = totalHours(evidences), oficiales = evidences.filter((e) => e.oficial).length;
+  const mejor = acreditaciones.map((ac) => ({ o: subjectOf(ac), p: leafProgress(ac) })).sort((a, b) => b.p.pct - a.p.pct)[0];
+  $("profileHead").innerHTML = `<div class="profile-top"><div class="avatar big" id="phAvatar"></div>
+      <div style="min-width:0"><h2 style="margin:0">${safe(perfil.nombre || "Sin nombre")}</h2>
+        <p class="subtle" style="margin:4px 0 0;font-size:14px">${safe([f.titular, f.lugar].filter(Boolean).join(" · ") || "Añade a qué te dedicas y dónde, más abajo.")}</p>
+        <div class="chips" style="margin-top:8px">${f.linkedin_url ? `<a class="pill" href="${safe(f.linkedin_url)}" target="_blank" rel="noopener">LinkedIn ↗</a>` : ""}${f.web ? `<a class="pill" href="${safe(f.web)}" target="_blank" rel="noopener">Web ↗</a>` : ""}${f.linkedin?.conectado ? '<span class="pill ok">Conectado con LinkedIn</span>' : ""}</div></div></div>
+    ${f.sobre ? `<p style="margin:14px 0 0;max-width:760px">${safe(f.sobre)}</p>` : ""}
+    <div class="kpis" style="margin-top:16px">${[[evidences.length, "Evidencias"], [oficiales, "Con documento oficial"], [fmtN(horas) + " h", "Horas documentadas"], [acreditaciones.length, "Acreditaciones en tu árbol"], [mejor ? mejor.p.pct + " %" : "—", mejor ? "Avance de «" + mejor.o.asignatura + "»" : "Tu acreditación más avanzada"]].map(([v, l]) => `<div class="stat"><strong>${safe(v)}</strong><small>${safe(l)}</small></div>`).join("")}</div>`;
+  pintarAvatar($("phAvatar"));
+}
 $("accountForm").addEventListener("submit", async (ev) => {
   ev.preventDefault();
-  try { await updatePerfil({ nombre: $("aName").value.trim(), compartir_con_coordinacion: $("aShare").checked }); $("aToast").textContent = "Guardado"; enterApp(); }
-  catch { $("aToast").textContent = "No se pudo guardar."; }
+  const url = (id) => { const v = $(id).value.trim(); return /^https?:\/\/\S+\.\S+/.test(v) ? v : ""; };
+  const f = { ...ficha(), titular: $("aTitular").value.trim(), lugar: $("aLugar").value.trim(), linkedin_url: url("aLinkedin"), web: url("aWeb"), sobre: $("aSobre").value.trim() };
+  try {
+    await updatePerfil({ nombre: $("aName").value.trim(), compartir_con_coordinacion: $("aShare").checked });
+    try { await updatePerfil({ ficha: f }); } catch { $("aToast").textContent = "Nombre guardado. Para guardar el resto falta actualizar la base de datos (008_perfil.sql)."; enterApp(); return; }
+    $("aToast").textContent = "Guardado"; enterApp(); renderPerfil();
+  } catch { $("aToast").textContent = "No se pudo guardar."; }
 });
+/** Square-crops and shrinks a photo in the browser, so the profile only stores a small image. */
+function recortarFoto(file, size = 256) {
+  return new Promise((ok, ko) => {
+    const url = URL.createObjectURL(file), img = new Image();
+    img.onload = () => {
+      const lado = Math.min(img.naturalWidth, img.naturalHeight), c = document.createElement("canvas");
+      c.width = c.height = size;
+      c.getContext("2d").drawImage(img, (img.naturalWidth - lado) / 2, (img.naturalHeight - lado) / 2, lado, lado, 0, 0, size, size);
+      URL.revokeObjectURL(url); ok(c.toDataURL("image/jpeg", 0.85));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); ko(new Error("No se pudo abrir esa imagen. Prueba con una foto JPG o PNG.")); };
+    img.src = url;
+  });
+}
+$("pFoto").addEventListener("change", async (ev) => {
+  const f = ev.target.files?.[0]; ev.target.value = ""; if (!f) return;
+  const msg = $("pFotoMsg");
+  if (f.size > 15 * 1024 * 1024) { msg.textContent = "La foto supera los 15 MB."; return; }
+  msg.textContent = "Guardando tu foto…";
+  try { await updatePerfil({ avatar: await recortarFoto(f) }); renderPerfil(); msg.textContent = "Foto guardada."; }
+  catch (e) { msg.textContent = e.message?.startsWith("No se pudo abrir") ? e.message : "No se pudo guardar la foto. Si sigue fallando, falta actualizar la base de datos (008_perfil.sql)."; }
+});
+$("pQuitarFoto").onclick = async () => { try { await updatePerfil({ avatar: "" }); renderPerfil(); $("pFotoMsg").textContent = "Foto quitada."; } catch { $("pFotoMsg").textContent = "No se pudo quitar."; } };
+
+/* LinkedIn: the person links their LinkedIn account (Sign In with LinkedIn) and Lumen brings their photo and name.
+   The button only appears when the LinkedIn provider is enabled in Supabase. */
+let linkedinActivo = null;
+async function comprobarLinkedin() {
+  if (linkedinActivo === null && publicCfg?.supabaseUrl) {
+    try { const r = await fetch(publicCfg.supabaseUrl + "/auth/v1/settings", { headers: { apikey: publicCfg.supabaseAnonKey } }); linkedinActivo = !!(await r.json()).external?.linkedin_oidc; }
+    catch { linkedinActivo = false; }
+  }
+  const conectado = (session.user.identities || []).some((i) => i.provider === "linkedin_oidc") || ficha().linkedin?.conectado;
+  $("pLinkedin").hidden = !linkedinActivo;
+  $("pLinkedin").lastChild.textContent = conectado ? " Volver a traer foto y nombre de LinkedIn" : " Traer foto y nombre de LinkedIn";
+  $("pLinkedinNota").textContent = linkedinActivo ? (conectado ? "Tu cuenta está conectada con LinkedIn. Lumen solo lee tu nombre y tu foto." : "Te pedirá entrar en LinkedIn y dar permiso. Lumen solo lee tu nombre y tu foto.") : "";
+}
+const LI_KEY = "lumen_linkedin_pendiente";
+$("pLinkedin").onclick = async () => {
+  const msg = $("pFotoMsg");
+  const conectado = (session.user.identities || []).some((i) => i.provider === "linkedin_oidc");
+  if (conectado) { await importarLinkedin(); return; }
+  try { localStorage.setItem(LI_KEY, "1"); } catch {}
+  msg.textContent = "Abriendo LinkedIn…";
+  const { error } = await sb.auth.linkIdentity({ provider: "linkedin_oidc", options: { redirectTo: location.origin } });
+  if (error) {
+    try { localStorage.removeItem(LI_KEY); } catch {}
+    msg.textContent = /manual linking/i.test(error.message) ? "Falta activar «Allow manual linking» en Supabase (Authentication → Sign In / Providers). Avisa a la coordinación." : "No se pudo conectar con LinkedIn. Inténtalo de nuevo.";
+  }
+};
+async function importarLinkedin() {
+  const msg = $("pFotoMsg");
+  msg.textContent = "Trayendo tu foto y tu nombre de LinkedIn…";
+  try {
+    const r = await (await api("/api/perfil", { accion: "linkedin" })).json();
+    await loadPerfil();
+    pintarAvatar($("avatar")); $("whoName").textContent = perfil.nombre || session.user.email;
+    if (vista === "cuenta") fillPerfil();
+    msg.textContent = r.foto ? "Listo: foto de LinkedIn guardada." : "Conectado con LinkedIn, pero no he podido traer tu foto (quizá no tienes una pública). Puedes subirla a mano.";
+  } catch (e) { msg.textContent = e.message; }
+}
+/** Back from LinkedIn: finish what the person started. */
+function alVolverDeLinkedin() {
+  let pendiente = false;
+  try { pendiente = localStorage.getItem(LI_KEY) === "1"; localStorage.removeItem(LI_KEY); } catch {}
+  if (!pendiente) return;
+  show("cuenta");
+  if ((session.user.identities || []).some((i) => i.provider === "linkedin_oidc")) importarLinkedin();
+  else $("pFotoMsg").textContent = "No se completó la conexión con LinkedIn.";
+}
 $("logout").onclick = async () => { await sb.auth.signOut(); location.reload(); };
 $("deleteAccount").onclick = async () => {
   const b = $("deleteAccount");
@@ -1483,7 +1586,7 @@ ${obj.resultados.map((r) => { const s = outcomeStatus(r, evs); return `<tr><td><
 </body></html>`;
 }
 $("exportHtml").onclick = () => acDe(acActual) && download(`lumen-expediente-${normalize(objetivo.asignatura).replace(/\W+/g, "-")}.html`, dossierHtml(objetivo, evsDe(acActual), perfil.nombre), "text/html");
-$("exportJson").onclick = () => download("lumen-mis-datos.json", JSON.stringify({ plataforma: "Lumen", exportado: new Date().toISOString(), aviso: "Declaraciones autoinformadas, pendientes de evaluación por la universidad", perfil: { nombre: perfil.nombre, consentimiento_at: perfil.consentimiento_at, compartir_con_coordinacion: perfil.compartir_con_coordinacion, trayectoria: perfil.trayectoria }, acreditaciones: acreditaciones.map((ac) => ({ asignatura: subjectOf(ac), estado: ac.estado, creada: ac.created_at, conversacion: ac.conversacion, recursos: ac.recursos })), evidencias: evidences }, null, 2), "application/json");
+$("exportJson").onclick = () => download("lumen-mis-datos.json", JSON.stringify({ plataforma: "Lumen", exportado: new Date().toISOString(), aviso: "Declaraciones autoinformadas, pendientes de evaluación por la universidad", perfil: { nombre: perfil.nombre, consentimiento_at: perfil.consentimiento_at, compartir_con_coordinacion: perfil.compartir_con_coordinacion, trayectoria: perfil.trayectoria, ficha: perfil.ficha, foto: perfil.avatar ? "incluida en la cuenta" : "" }, acreditaciones: acreditaciones.map((ac) => ({ asignatura: subjectOf(ac), estado: ac.estado, creada: ac.created_at, conversacion: ac.conversacion, recursos: ac.recursos })), evidencias: evidences }, null, 2), "application/json");
 
 /* ================= Auth screens ================= */
 $("loginForm").addEventListener("submit", async (ev) => {
@@ -1694,7 +1797,8 @@ const skillsHtml = (x) => (x.competencias?.length ? `<div class="chips">${x.comp
 function renderTrayectoria() {
   const t = tray();
   if (!$("tNombre").value) $("tNombre").value = t.nombre || perfil.nombre || "";
-  if (!$("tPistas").value && t.pistas) $("tPistas").value = t.pistas;
+  if (!$("tPistas").value) $("tPistas").value = t.pistas || [ficha().titular, ficha().lugar].filter(Boolean).join(", ");
+  if (!$("tEnlaces").value && (ficha().linkedin_url || ficha().web)) $("tEnlaces").value = [ficha().linkedin_url, ficha().web].filter(Boolean).join("\n");
   const items = t.items || [], pend = items.filter((x) => x.estado === "pendiente"), vivos = items.filter((x) => x.estado === "confirmada");
   $("trayBadge").hidden = !pend.length; $("trayBadge").textContent = pend.length;
 

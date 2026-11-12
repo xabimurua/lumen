@@ -75,7 +75,7 @@
       <button data-view="evidencias"><span>▤</span>Mis evidencias</button>
       <button data-view="arbol"><span>◎</span>Mis acreditaciones <b class="badge" id="propBadge" hidden></b></button>
       <button data-view="coordinacion" id="navCoord" hidden><span>◇</span>Coordinación</button>
-      <button data-view="cuenta"><span>○</span>Mi cuenta</button>
+      <button data-view="cuenta"><span>○</span>Mi perfil</button>
       <button data-view="acerca"><span>?</span>Qué es Lumen</button>
     </nav>
     <div class="side-note"><strong>Lo que aprendes cuenta.</strong>En el trabajo, el voluntariado o la vida diaria. Lumen te ayuda a documentarlo para que una universidad pueda reconocerlo.<button class="side-link" type="button" data-goto="acerca">Qué es Lumen →</button></div>
@@ -84,7 +84,7 @@
   <main class="content">
     <div class="top">
       <div><small id="eyebrow">Plataforma de evidencias de aprendizaje</small><h1 id="pagetitle">¿Qué has aprendido hoy?</h1></div>
-      <div class="who"><span id="whoName"></span><div class="avatar" id="avatar">TÚ</div></div>
+      <button class="who" type="button" data-goto="cuenta" title="Mi perfil"><span id="whoName"></span><div class="avatar" id="avatar">TÚ</div></button>
     </div>
 
     <!-- HOY -->
@@ -382,10 +382,35 @@
 
     <!-- CUENTA -->
     <section id="cuenta" class="view">
+      <div class="full profile-head" id="profileHead"></div>
       <div class="full">
-        <h2>Mi cuenta</h2>
-        <form class="form" id="accountForm" style="max-width:560px">
-          <label class="field">Nombre<input id="aName" autocomplete="name"></label>
+        <h2>Tu foto</h2>
+        <div class="photo-row">
+          <div class="avatar big" id="pAvatar" aria-hidden="true">TÚ</div>
+          <div class="form" style="margin-top:0">
+            <div class="row-actions" style="margin-top:0">
+              <label class="btn" for="pFoto">Subir una foto</label>
+              <input type="file" id="pFoto" accept="image/png,image/jpeg,image/webp" class="visually-hidden">
+              <button class="btn" type="button" id="pLinkedin" hidden><span class="li-mark" aria-hidden="true">in</span> Traer foto y nombre de LinkedIn</button>
+              <button class="btn danger" type="button" id="pQuitarFoto" hidden>Quitar foto</button>
+            </div>
+            <span class="toast" id="pFotoMsg" aria-live="polite"></span>
+            <small class="subtle" id="pLinkedinNota"></small>
+          </div>
+        </div>
+      </div>
+      <div class="full">
+        <h2>Sobre ti</h2>
+        <p class="note">Lumen usa estos datos para buscar tu trayectoria y para presentar tu expediente. Solo los ves tú y, si lo autorizas, la coordinación.</p>
+        <form class="form" id="accountForm" style="max-width:760px">
+          <div class="edit-grid">
+            <label class="field">Nombre y apellidos<input id="aName" autocomplete="name"></label>
+            <label class="field">A qué te dedicas<input id="aTitular" maxlength="160" placeholder="Ej.: Cofundador de una startup de participación ciudadana"></label>
+            <label class="field">Dónde vives o trabajas<input id="aLugar" maxlength="120" placeholder="Ej.: Bilbao"></label>
+            <label class="field">Tu perfil de LinkedIn<input id="aLinkedin" type="url" maxlength="300" placeholder="https://www.linkedin.com/in/…"></label>
+            <label class="field">Tu web o portfolio<input id="aWeb" type="url" maxlength="300" placeholder="https://…"></label>
+          </div>
+          <label class="field">Preséntate en pocas líneas<textarea id="aSobre" maxlength="1200" style="min-height:90px" placeholder="Qué has hecho, qué te interesa y qué te gustaría que te reconocieran."></textarea></label>
           <label class="check"><input type="checkbox" id="aShare"> Autorizo a la coordinación del piloto a ver mis evidencias y mi expediente.</label>
           <div class="row-actions"><button class="btn primary" type="submit">Guardar</button><span class="toast" id="aToast" aria-live="polite"></span></div>
         </form>

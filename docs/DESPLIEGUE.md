@@ -14,7 +14,7 @@ Necesitas cuatro cuentas: **GitHub**, **Supabase**, **Vercel** y **Anthropic Con
 ## 2. Supabase: base de datos, acceso y archivos
 
 1. En [supabase.com](https://supabase.com), crea un proyecto nuevo. En **Region**, elige una región de la UE (por ejemplo *Central EU (Frankfurt)*). Guarda la contraseña de la base de datos en un lugar seguro.
-2. Abre **SQL Editor → New query**, pega el contenido de `supabase/schema.sql` y pulsa **Run**. Crea las tablas, las reglas de seguridad y el almacén privado `artefactos`. (Si ya lo habías ejecutado con una versión anterior, ejecuta también `supabase/002_propuestas.sql`, `supabase/003_catalogo.sql`, `supabase/004_trayectoria.sql`, `supabase/005_convenios.sql`, `supabase/006_recursos.sql` y `supabase/007_acreditaciones.sql`, en ese orden.)
+2. Abre **SQL Editor → New query**, pega el contenido de `supabase/schema.sql` y pulsa **Run**. Crea las tablas, las reglas de seguridad y el almacén privado `artefactos`. (Si ya lo habías ejecutado con una versión anterior, ejecuta también `supabase/002_propuestas.sql`, `supabase/003_catalogo.sql`, `supabase/004_trayectoria.sql`, `supabase/005_convenios.sql`, `supabase/006_recursos.sql`, `supabase/007_acreditaciones.sql` y `supabase/008_perfil.sql`, en ese orden.)
 3. En **Authentication → URL Configuration**:
    - **Site URL**: la dirección final de Lumen (por ejemplo `https://lumen.tudominio.es`, o la de Vercel del paso 3).
    - **Redirect URLs**: añade esa misma dirección.
@@ -76,6 +76,18 @@ Permite a los participantes elegir archivos de su Drive como material o como pru
 Las carpetas no se comparten enteras: la persona entra en la carpeta y elige los archivos que quiere aportar. Los documentos, hojas y presentaciones de Google se convierten a PDF.
 
 **Gmail no se conecta** a propósito: el permiso para leer el correo es restringido, exige una auditoría de seguridad de Google y daría acceso a todo el buzón. Para aportar un correo (por ejemplo, la confirmación de un responsable), se descarga como `.eml` («Descargar mensaje» en Gmail) o se guarda como PDF y se adjunta: Lumen lo lee igual.
+
+## 5 quater. Opcional: traer la foto y el nombre de LinkedIn
+
+En «Mi perfil», cada persona puede subir su foto o traerla de LinkedIn. El botón de LinkedIn solo aparece cuando está activado en Supabase:
+
+1. En **linkedin.com/developers** → **Create app**. Pon el nombre «Lumen», asocia una página de empresa de LinkedIn (es obligatorio) y sube el logo.
+2. En la pestaña **Products**, solicita **Sign In with LinkedIn using OpenID Connect** (se concede al momento).
+3. En la pestaña **Auth**, en **Authorized redirect URLs**, añade `https://TU-PROYECTO.supabase.co/auth/v1/callback` (la URL de tu proyecto de Supabase). Copia el **Client ID** y el **Primary Client Secret**.
+4. En Supabase → **Authentication → Sign In / Providers → LinkedIn (OIDC)**: actívalo y pega el Client ID y el Client Secret. Guarda.
+5. En esa misma página de Supabase, activa **Allow manual linking** (permite conectar LinkedIn a una cuenta que ya existe).
+
+Lumen solo pide a LinkedIn el nombre, la foto y el correo (permisos `openid profile email`).
 
 ## 6. Antes de abrir el piloto: lista de comprobación
 
