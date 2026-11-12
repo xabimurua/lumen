@@ -394,6 +394,7 @@ function useChat(key) {
   draft = snap?.draft || null; stage = draft ? snap.stage : snap?.stage === "done" ? "done" : "start";
   if (snap?.msgs?.length) {
     for (const m of snap.msgs) bubble(m.text, m.who);
+    if (key === "hoy" && !draft && Date.now() - (snap.guardado || 0) > 6 * 36e5) { proponer(`Hola de nuevo${perfil.nombre ? ", " + perfil.nombre.split(" ")[0] : ""}.`); return true; }
     if (draft && ["dialogue", "review"].includes(stage)) bubble(`Seguimos con «${draft.titulo}» donde lo dejaste. Si prefieres empezar otra cosa, escribe «empezar de nuevo».`);
     if (snap.choices?.length) choices(snap.choices);
     setPhase();
@@ -403,9 +404,13 @@ function useChat(key) {
 }
 function greet(key) {
   if (key === "hoy") {
-    bubble(`Hola${perfil.nombre ? ", " + perfil.nombre.split(" ")[0] : ""}. Te ayudo a convertir lo que aprendes cada día en evidencias que una universidad pueda reconocer.\n\nCuéntame algo que hayas hecho o aprendido y te haré preguntas hasta tener lo que pide un expediente: qué sabes hacer, un caso real, horas, un producto que lo pruebe y alguien que pueda confirmarlo.\n\nLo que documentes aquí queda en tu trayectoria y Lumen lo vincula a las acreditaciones de tu árbol. Si quieres trabajar una acreditación concreta, ábrela en «Mis acreditaciones»: cada una tiene su propia conversación.`);
-    stage = "start"; setPhase();
-    choices(perfil.trayectoria?.buscada ? ["Empezar a documentar", "Quiero acreditar algo concreto"] : ["Empezar a documentar", "Cargar mi experiencia"]);
+    if (!evidences.length && !tray().buscada) {
+      bubble(`Hola${perfil.nombre ? ", " + perfil.nombre.split(" ")[0] : ""}. Soy Lumen. Te ayudo a convertir lo que aprendes cada día en evidencias que una universidad pueda reconocer.\n\nCuéntame algo que hayas hecho o aprendido y te haré preguntas hasta tener lo que pide un expediente: qué sabes hacer, un caso real, horas, un producto que lo pruebe y alguien que pueda confirmarlo.\n\nSi prefieres, empiezo cargando tu experiencia: tu currículum, tus títulos o lo que haya sobre ti en internet.`);
+      stage = "start"; setPhase();
+      choices(["Cargar mi experiencia", "Empezar a documentar", "¿Qué es Lumen?"]);
+      return;
+    }
+    proponer(`Hola${perfil.nombre ? ", " + perfil.nombre.split(" ")[0] : ""}. Lo que documentes aquí queda en tu trayectoria y lo vinculo a las acreditaciones de tu árbol.`);
     return;
   }
   const ac = acDe(key), o = subjectOf(ac), p = o.resultados.length ? progressOf(o, evsDe(key)) : null;
@@ -515,6 +520,11 @@ async function submit(value) {
   if (stage === "done" && value === "Ver mis evidencias") { if (chatAc()) setTab("evid"); else show("evidencias"); return; }
   if (value === "Ver propuestas de acreditación") { show("arbol"); $("propSection").scrollIntoView(); return; }
   if (value === "Cargar mi experiencia") { show("trayectoria"); return; }
+  if (value === "¿Qué es Lumen?") { show("acerca"); return; }
+  if (!chatAc() && (stage === "start" || stage === "done") && value !== "Empezar a documentar") {
+    const c = cycleCards().find((x) => x.cta === value);
+    if (c) { c.go(); return; }
+  }
   if (value === "Abrir la acreditación" && lastAcCreada) { openAcreditacion(lastAcCreada); return; }
   if (stage === "done" && value === "Añadir a mi árbol" && lastPropuesta) {
     bubble(value, "user");
@@ -815,7 +825,7 @@ $("intentForm").addEventListener("submit", (ev) => {
 $("discoverBtn").onclick = () => runProposal("", $("discoverBtn"));
 
 /* ================= Views ================= */
-const TITLES = { agente: ["Plataforma de evidencias de aprendizaje", "¿Qué has aprendido hoy?"], trayectoria: ["Mi trayectoria", "Todo lo que ya has hecho, en un solo sitio."], evidencias: ["Evidencias", "Cada aprendizaje, con sus pruebas."], arbol: ["Mis acreditaciones", "Tu árbol de acreditaciones."], acreditacion: ["Mis acreditaciones", ""], coordinacion: ["Coordinación", "Seguimiento del piloto."], cuenta: ["Cuenta", "Tus datos, bajo tu control."] };
+const TITLES = { agente: ["Plataforma de evidencias de aprendizaje", "¿Qué has aprendido hoy?"], trayectoria: ["Mi trayectoria", "Todo lo que ya has hecho, en un solo sitio."], evidencias: ["Evidencias", "Cada aprendizaje, con sus pruebas."], arbol: ["Mis acreditaciones", "Tu árbol de acreditaciones."], acreditacion: ["Mis acreditaciones", ""], coordinacion: ["Coordinación", "Seguimiento del piloto."], cuenta: ["Cuenta", "Tus datos, bajo tu control."], acerca: ["Qué es Lumen", "Del día a día al crédito."] };
 function show(id) {
   if (id === "acreditacion" && !acDe(acActual)) id = "arbol";
   if ((id === "agente" || id === "acreditacion") && !useChat(id === "agente" ? "hoy" : acActual)) {
@@ -936,9 +946,9 @@ function enterApp() {
   if (pendingTrace) { const p = pendingTrace; pendingTrace = null; setTimeout(() => autoTraceOnSignup(p), 0); }
 }
 
-/* ================= The learning cycle: four things you can do at any time ================= */
+/* ================= What Lumen suggests next ================= */
 // Not a sequence: experience, accreditations, strengthening and presenting feed each other, and the person
-// can go back to any of them whenever they like. Lumen only highlights the one that would help most now.
+// can go back to any of them whenever they like. The agent proposes the one that would help most now.
 function cycleCards() {
   const items = tray().items || [], pend = pendientes().length, nExp = evidences.length;
   const prog = acreditaciones.map((ac) => ({ ac, o: subjectOf(ac), p: leafProgress(ac) })).filter((x) => x.p.sts.length);
@@ -951,34 +961,36 @@ function cycleCards() {
       d: pend ? `Lumen encontró ${pend} experiencia${pend === 1 ? "" : "s"} que tienes que confirmar.` : "Documenta algo nuevo, súbelo al diario o carga tu currículum.",
       cta: pend ? `Revisar ${pend}` : nExp ? "Documentar algo" : "Cargar mi experiencia",
       go: () => (pend ? (show("trayectoria"), $("trayReview").scrollIntoView()) : nExp ? (show("agente") && !busy && (bubble("Quiero documentar algo nuevo.", "user"), begin())) : show("trayectoria")),
+      chat: pend ? `Al buscar tu trayectoria encontré ${pend} experiencia${pend === 1 ? "" : "s"} que no sé seguro si ${pend === 1 ? "es tuya" : "son tuyas"}. ¿Las revisamos?` : "Cuéntame algo más que hayas hecho o aprendido, o sube tu currículum y tus títulos.",
       prio: pend ? 1 : nExp < 2 ? 2 : 9 },
     { k: "arbol", icon: "◎", t: "Tus acreditaciones", m: acreditaciones.length ? `${acreditaciones.length} en tu árbol` : "Ninguna todavía",
       d: nuevasProp ? `Lumen te propone ${nuevasProp} asignatura${nuevasProp === 1 ? "" : "s"} nueva${nuevasProp === 1 ? "" : "s"}.` : acreditaciones.length ? "Añade otra cuando quieras, de cualquier tema." : "Elige dónde puede contar lo que sabes.",
       cta: nuevasProp ? "Ver propuestas" : acreditaciones.length ? "Ver mi árbol" : "Elegir acreditación", go: () => show("arbol"),
+      chat: !acreditaciones.length ? `Ya tienes ${nExp} evidencias. El siguiente paso es elegir dónde pueden contar: te propongo asignaturas reales de universidades.` : `Con lo que has documentado, te propongo ${nuevasProp} asignatura${nuevasProp === 1 ? "" : "s"} más para tu árbol.`,
       prio: !acreditaciones.length && nExp >= 2 ? 3 : nuevasProp ? 5 : 9 },
     { k: "reforzar", icon: "✎", t: "Reforzar evidencias", m: flojas.length ? `${flojas.length} con poco detalle` : "Todas con buen detalle",
       d: flojas.length ? `Por ejemplo, «${flojas[0].titulo}». Con 3 preguntas basta.` : cerca ? `En «${cerca.o.asignatura}» añade pruebas o la confirmación de alguien.` : "Añade pruebas y confirmaciones cuando las tengas.",
       cta: flojas.length ? "Reforzar una" : cerca ? "Ver qué falta" : "Mis evidencias",
       go: () => (flojas.length ? (show("evidencias"), openQuick(flojas[0].id)) : cerca ? openAcreditacion(cerca.ac.id, "ruta") : show("evidencias")),
+      chat: flojas.length ? `${flojas.length === 1 ? "Una evidencia tiene" : `${flojas.length} evidencias tienen`} poco detalle, y así ${flojas.length === 1 ? "vale" : "valen"} menos ante una universidad. Empecemos por «${flojas[0].titulo}»: con 3 preguntas basta, o aportando su título o certificado si lo tiene.` : "",
       prio: flojas.length && acreditaciones.length ? 4 : 8 },
     { k: "presentar", icon: "◈", t: "Presentar", m: mejor ? `«${mejor.o.asignatura}» al ${mejor.p.pct} %` : "Sin acreditación aún",
       d: mejor ? (mejor.p.pct === 100 ? "Su expediente está listo para la universidad." : `${mejor.p.ready} de ${mejor.p.sts.length} resultados listos. Puedes descargar el expediente cuando quieras.`) : "Cuando tengas una acreditación, verás aquí su expediente.",
       cta: mejor ? "Ver expediente" : "Ver mi árbol", go: () => (mejor ? openAcreditacion(mejor.ac.id, "exp") : show("arbol")),
+      chat: mejor ? (mejor.p.pct === 100 ? `«${mejor.o.asignatura}» está completa: su expediente está listo para presentarlo a la universidad.` : `«${mejor.o.asignatura}» va por el ${mejor.p.pct} %. Sigamos en su conversación con lo que le falta.`) : "",
       prio: mejor?.p.pct === 100 ? 1 : cerca ? 6 : 9 },
   ];
   const sug = [...cards].sort((a, b) => a.prio - b.prio)[0];
   if (sug.prio < 9) sug.sug = true;
   return cards;
 }
-function renderGuide() {
-  const cards = cycleCards();
-  $("guia").innerHTML = `<div class="cycle-head"><b>Tu ciclo de aprendizaje</b><span>No hay un orden: cada cosa nueva que documentas alimenta tus acreditaciones, y puedes volver a cualquier parte cuando quieras.</span></div>
-    <div class="cycle">${cards.map((c, i) => `<div class="cycle-card${c.sug ? " sug" : ""}">
-      ${c.sug ? '<span class="cycle-sug">Sugerencia de Lumen</span>' : ""}
-      <div class="cycle-top"><span class="cycle-icon" aria-hidden="true">${c.icon}</span><b>${safe(c.t)}</b></div>
-      <strong>${safe(c.m)}</strong><span class="subtle">${safe(c.d)}</span>
-      <button class="btn small${c.sug ? " primary" : ""}" type="button" data-cycle="${i}">${safe(c.cta)} →</button></div>`).join("")}</div>`;
-  $("guia").querySelectorAll("[data-cycle]").forEach((b) => (b.onclick = () => cards[Number(b.dataset.cycle)].go()));
+const sugerencia = () => cycleCards().find((c) => c.sug) || null;
+/** Lumen's proposal for now, said in the conversation with a button to do it. */
+function proponer(saludo) {
+  const sug = sugerencia();
+  bubble(`${saludo}${sug ? `\n\n${sug.chat || sug.d}` : ""}\n\nO cuéntame directamente algo que hayas hecho o aprendido.`);
+  stage = "start"; setPhase();
+  choices([...(sug ? [sug.cta] : []), "Empezar a documentar", ...(acreditaciones.length ? [] : ["Quiero acreditar algo concreto"])]);
 }
 
 /* ================= Render ================= */
@@ -1005,7 +1017,7 @@ function dots(v) { return `<span class="dots${v === 3 ? " complete" : ""}">${[1,
 function render() {
   if (!perfil) return;
   if (vista === "acreditacion" && !acDe(acActual)) { show("arbol"); return; }
-  renderGuide(); renderMiniArbol(); renderArbol(); renderProposals(); renderTrayectoria();
+  renderMiniArbol(); renderArbol(); renderProposals(); renderTrayectoria();
   if (vista === "arbol") renderCatalog();
   if (vista === "evidencias") renderEvidenceList($("evidenceList"), evidences, NO_OBJ, true); else $("evidenceList").innerHTML = "";
   if (vista === "acreditacion") renderAcreditacion(); else $("acEvidenceList").innerHTML = "";

@@ -76,8 +76,9 @@
       <button data-view="arbol"><span>◎</span>Mis acreditaciones <b class="badge" id="propBadge" hidden></b></button>
       <button data-view="coordinacion" id="navCoord" hidden><span>◇</span>Coordinación</button>
       <button data-view="cuenta"><span>○</span>Mi cuenta</button>
+      <button data-view="acerca"><span>?</span>Qué es Lumen</button>
     </nav>
-    <div class="side-note"><strong>Lo que aprendes cuenta.</strong>En el trabajo, el voluntariado o la vida diaria. Lumen te ayuda a documentarlo para que una universidad pueda reconocerlo.</div>
+    <div class="side-note"><strong>Lo que aprendes cuenta.</strong>En el trabajo, el voluntariado o la vida diaria. Lumen te ayuda a documentarlo para que una universidad pueda reconocerlo.<button class="side-link" type="button" data-goto="acerca">Qué es Lumen →</button></div>
   </aside>
 
   <main class="content">
@@ -88,7 +89,6 @@
 
     <!-- HOY -->
     <section id="agente" class="view on">
-      <div class="guide" id="guia"></div>
       <div class="workspace">
         <div id="hoyChatSlot"><div class="chat" id="chatBox">
           <div class="chat-head">
@@ -228,16 +228,6 @@
           </form>
         </details>
       </div>
-      <div class="full">
-        <h2>Cómo valora Lumen tus evidencias</h2>
-        <p class="note">Son los criterios habituales en los procesos de reconocimiento de aprendizajes por experiencia. Cada universidad aplica su propio procedimiento.</p>
-        <div class="criteria">
-          <div><b>Validez</b>La evidencia se relaciona con un resultado de aprendizaje concreto de la asignatura.</div>
-          <div><b>Autenticidad</b>El aprendizaje es tuyo y se puede comprobar: un producto que hiciste y la confirmación de alguien que lo vio.</div>
-          <div><b>Suficiencia</b>Hay bastante profundidad y variedad: explicas, aplicas, das ejemplos y reconoces límites.</div>
-          <div><b>Vigencia</b>El aprendizaje es reciente. Lumen considera vigente lo ocurrido en los últimos cinco años.</div>
-        </div>
-      </div>
       </div>
     </section>
 
@@ -285,6 +275,46 @@
         </div>
         <p class="notice" style="margin-top:20px">Lumen no concede créditos. El reconocimiento lo resuelve la universidad según su normativa. En España, la experiencia laboral y profesional puede reconocerse hasta el 15&nbsp;% de los créditos de una titulación, siempre que esté relacionada con sus competencias. Consulta con la secretaría o la comisión de reconocimiento de tu centro antes de presentar el expediente.</p>
       </div>
+      </div>
+    </section>
+
+    <!-- QUÉ ES LUMEN -->
+    <section id="acerca" class="view">
+      <div class="full about-hero">
+        <h2>Lo que aprendes fuera de las aulas también cuenta</h2>
+        <p>Lumen es un agente de inteligencia artificial que te ayuda a convertir lo que has aprendido trabajando, emprendiendo, en un voluntariado, con cursos o por tu cuenta en <b>evidencias que una universidad pueda reconocer</b> como créditos de una titulación oficial.</p>
+        <p class="note">Hablas con Lumen como con un orientador: tú cuentas lo que has hecho y Lumen pregunta, investiga, lee tus documentos y ordena todo con los criterios que usan las universidades.</p>
+        <div class="row-actions"><button class="btn primary" type="button" data-goto="agente">Hablar con Lumen →</button></div>
+      </div>
+      <div class="full">
+        <h2>Cómo funciona</h2>
+        <p class="note">No hay un orden fijo. Es un ciclo: cada cosa nueva que cuentas alimenta tus acreditaciones, y puedes volver a cualquier parte cuando quieras.</p>
+        <div class="about-steps">
+          <div><span aria-hidden="true">◴</span><b>Cuéntale lo que has hecho</b>Conversa con Lumen, escribe en el diario, sube tu currículum, tus títulos y certificados o deja que busque tu trayectoria pública en internet.</div>
+          <div><span aria-hidden="true">✦</span><b>Lumen lo convierte en evidencias</b>Te hace preguntas concretas, investiga los proyectos y empresas que mencionas, lee el material del que aprendiste y verifica los documentos oficiales.</div>
+          <div><span aria-hidden="true">◎</span><b>Construyes tu árbol de acreditaciones</b>Asignaturas reales de títulos universitarios oficiales donde puede contar lo que sabes. Cada una tiene su propia conversación, sus evidencias y su recorrido, y una misma experiencia puede servir para varias.</div>
+          <div><span aria-hidden="true">◈</span><b>Presentas tu expediente</b>Cuando los resultados de aprendizaje de una asignatura están cubiertos, descargas su expediente para presentarlo a la universidad.</div>
+        </div>
+      </div>
+      <div class="full">
+        <h2>Qué hace que una evidencia valga</h2>
+        <p class="note">Son los criterios habituales en los procesos de reconocimiento de aprendizajes por experiencia. Cada universidad aplica su propio procedimiento.</p>
+        <div class="criteria">
+          <div><b>Validez</b>La evidencia se relaciona con un resultado de aprendizaje concreto de la asignatura.</div>
+          <div><b>Autenticidad</b>El aprendizaje es tuyo y se puede comprobar: un producto que hiciste y la confirmación de alguien que lo vio.</div>
+          <div><b>Suficiencia</b>Hay bastante profundidad y variedad: explicas, aplicas, das ejemplos y reconoces límites.</div>
+          <div><b>Vigencia</b>El aprendizaje es reciente. Lumen considera vigente lo ocurrido en los últimos cinco años.</div>
+        </div>
+        <p class="note" style="margin-top:12px"><b>Los títulos y certificados oficiales</b> (un grado, un certificado de idiomas, un curso, un certificado de empresa o de vida laboral) no se puntúan así: el documento ya prueba el aprendizaje. Lumen comprueba que está a tu nombre, quién lo expide y qué acredita.</p>
+      </div>
+      <div class="full">
+        <h2>Lo que Lumen hace y lo que no</h2>
+        <ul class="about-list">
+          <li><b>Lumen no concede créditos.</b> El reconocimiento lo decide la universidad según su normativa. En España, la experiencia laboral y profesional puede reconocerse hasta el 15&nbsp;% de los créditos de una titulación, si está relacionada con sus competencias.</li>
+          <li><b>Las asignaturas son reales.</b> Sus resultados de aprendizaje se copian de la guía docente oficial. Lumen firma convenios con universidades; las que aún no lo tienen aparecen como «Sin convenio todavía» y lo que documentes para ellas cuenta igual.</li>
+          <li><b>Tus datos son tuyos.</b> Tú decides qué se guarda, puedes descargarlo y borrarlo cuando quieras, y la coordinación solo ve tu expediente si lo autorizas. <a href="/privacidad.html" target="_blank" rel="noopener">Información sobre protección de datos</a>.</li>
+          <li><b>La valoración es orientativa.</b> Las puntuaciones las estima la IA para ayudarte a preparar el expediente; la evaluación definitiva es de la universidad.</li>
+        </ul>
       </div>
     </section>
 

@@ -300,3 +300,12 @@ button.pill:hover{border-color:var(--line)}
 .oficial-box{display:grid;gap:3px;border:1px solid var(--good);background:var(--good-bg);border-radius:12px;padding:12px 14px;margin-top:12px;font-size:13px}
 .oficial-box b{color:var(--good)}
 .oficial-box code{font-size:12px}
+.side-link{display:block;margin-top:10px;background:none;border:0;padding:0;color:var(--lamp);font-weight:700;font-size:12px;cursor:pointer}
+.about-hero p{max-width:760px;font-size:16px}
+.about-steps{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-top:12px}
+.about-steps div{border:1px solid var(--line);background:var(--bg);border-radius:14px;padding:14px;font-size:13px;color:var(--muted);display:grid;gap:6px;align-content:start}
+.about-steps span{display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:var(--lamp-soft);color:var(--ink)}
+.about-steps b{color:var(--ink);font-size:14px}
+.about-list{margin:8px 0 0;padding-left:20px;display:grid;gap:10px;max-width:860px;font-size:14px}
+@media(max-width:1100px){.about-steps{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:560px){.about-steps{grid-template-columns:1fr}}
