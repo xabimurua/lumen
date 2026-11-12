@@ -979,7 +979,26 @@ function renderGuide() {
 }
 
 /* ================= Render ================= */
-function dots(v) { return `<span class="dots${v === 3 ? " full" : ""}">${[1, 2, 3].map((i) => `<i class="${i <= v ? "on" : ""}"></i>`).join("")}</span>`; }
+const CRIT_INFO = {
+  validez: "Validez: si la evidencia se relaciona con resultados de aprendizaje concretos de la asignatura.",
+  autenticidad: "Autenticidad: si se puede comprobar que es tuya (un producto que hiciste, un documento oficial o la confirmación de alguien).",
+  suficiencia: "Suficiencia: si hay bastante detalle (qué aprendiste, un caso real, cómo lo aplicaste y sus límites).",
+  vigencia: "Vigencia: qué reciente es. 3 = últimos 2 años, 2 = hasta 5, 1 = hasta 10, 0 = más de 10.",
+};
+/** The one thing that would most raise this evidence's assessment (currency last: it can't be fixed on the evidence itself). */
+function mejoraTexto(e, s) {
+  const orden = ["suficiencia", "autenticidad", "validez", "vigencia"].filter((k) => s[k] < 3).sort((a, b) => s[a] - s[b]);
+  const k = orden.find((x) => x !== "vigencia") || orden[0];
+  if (!k) return "Valoración máxima en los cuatro criterios.";
+  const anos = Math.floor(yearsAgo(e.fecha));
+  return {
+    suficiencia: "Para mejorarla: añade detalle (un caso real, cómo lo aplicaste y qué límites tienes). Con «Completar con 3 preguntas» basta.",
+    autenticidad: "Para mejorarla: adjunta algo que lo pruebe (un documento, un enlace o un certificado oficial) o pide la confirmación de alguien que lo vio.",
+    validez: Object.keys(e.vinculos || {}).length ? "Para mejorarla: explica con más precisión qué aprendiste y cómo encaja con la asignatura." : "Para mejorarla: vincúlala a una acreditación de tu árbol, a resultados de aprendizaje concretos.",
+    vigencia: `Es de hace ${anos} año${anos === 1 ? "" : "s"}: las universidades valoran más lo reciente. Si sigues aplicándolo, documenta un ejemplo actual.`,
+  }[k];
+}
+function dots(v) { return `<span class="dots${v === 3 ? " complete" : ""}">${[1, 2, 3].map((i) => `<i class="${i <= v ? "on" : ""}"></i>`).join("")}</span>`; }
 function render() {
   if (!perfil) return;
   if (vista === "acreditacion" && !acDe(acActual)) { show("arbol"); return; }
@@ -1027,7 +1046,8 @@ function renderEvidenceList(container, evs, obj, editable, { acId = null, acs = 
       <div class="card-head"><div style="min-width:0"><b>${safe(e.titulo)}</b><small>${e.tipo === "diario" ? "Diario" : e.tipo === "trayectoria" ? "Trayectoria" : "Entrevista"} · ${safe(fmtDate(e.fecha))}${e.contexto ? " · " + safe(e.contexto) : ""}${e.horas ? " · " + fmtN(num(e.horas)) + " h" : ""}</small></div>${vPill}</div>
       <div class="chips">${raTags}${arts}</div>
       ${lecturas ? `<ul class="lecturas"><li class="subtle">Revisión de las pruebas por Lumen</li>${lecturas}</ul>` : ""}
-      <div class="vasc">${CRIT.map(([k, l]) => `<div>${l} ${s[k]}/3${dots(s[k])}</div>`).join("")}</div>
+      <div class="vasc" title="Cómo valoraría una universidad esta evidencia">${CRIT.map(([k, l]) => `<div title="${safe(CRIT_INFO[k])}">${l} ${s[k]}/3${dots(s[k])}</div>`).join("")}</div>
+      ${editable ? `<p class="vasc-help"><b>Cómo la valoraría una universidad (de 0 a 3).</b> ${safe(mejoraTexto(e, s))}</p>` : ""}
       ${e.falta ? `<div class="falta">Le falta: ${safe(e.falta)}</div>` : ""}
       ${editable && !quickState[e.id] && (s.suficiencia < 2 || !e.oficial) ? `<div class="row-actions" style="margin-top:8px">
         ${e.oficial ? "" : `<label class="btn small${esFormacion(e) ? " accent" : ""}" for="cert-${id}">🎓 ${safe(certLabel(e))}</label><input type="file" id="cert-${id}" data-act="upload" data-clase="acreditativo" data-id="${id}" accept=".pdf,.png,.jpg,.jpeg,.webp,application/pdf,image/*" class="visually-hidden">`}
