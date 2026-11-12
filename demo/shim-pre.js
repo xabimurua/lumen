@@ -1,7 +1,7 @@
 // Demo backend for claude.ai: an in-browser stand-in for Supabase and the /api routes.
 // The production app.js runs unchanged on top of it.
 (function () {
-  const KEY = "lumen_demo_v2";
+  const KEY = "lumen_demo_v3";
   const CAT1 = "c0000000-0000-4000-8000-000000000001";
   const ME = "00000000-0000-4000-8000-000000000001";
   const OTHER = "00000000-0000-4000-8000-000000000002";
@@ -12,10 +12,10 @@
       session: null,
       perfiles: [
         { user_id: ME, nombre: "", role: "coordinador", consentimiento_at: null, consentimiento_version: null, compartir_con_coordinacion: false, objetivo: {}, created_at: new Date().toISOString() },
-        { user_id: OTHER, nombre: "Participante de ejemplo", role: "participante", consentimiento_at: "2026-10-01T09:00:00Z", consentimiento_version: "piloto-v1", compartir_con_coordinacion: true, objetivo: { asignatura_id: CAT1 }, created_at: "2026-10-01T09:00:00Z" },
+        { user_id: OTHER, nombre: "Participante de ejemplo", role: "participante", consentimiento_at: "2026-10-01T09:00:00Z", consentimiento_version: "piloto-v1", compartir_con_coordinacion: true, objetivo: {}, created_at: "2026-10-01T09:00:00Z" },
       ],
       evidencias: [
-        { id: "e0000000-0000-4000-8000-000000000001", user_id: OTHER, created_at: "2026-10-05T18:00:00Z", data: { id: "e0000000-0000-4000-8000-000000000001", kind: "evidence", tipo: "entrevista", titulo: "Coordinación de un banco de alimentos (ejemplo)", fecha: "2026-09-20", createdAt: 1, contexto: "Voluntariado", horas: 20, resultados: ["RA1", "RA3"], evidencias: { idea: "Explica cómo organizó turnos de 15 voluntarios con una hoja compartida.", aplicacion: "Redujo los huecos de cobertura del sábado.", limites: "Reconoce que le falta formación en gestión de conflictos." }, criterios: { validez: 2, suficiencia: 2 }, falta: "Adjuntar la planilla de turnos y la confirmación de la coordinadora.", artefactos: [], verificacion: { nombre: "Coordinadora del banco", rol: "Responsable de voluntariado", contacto: "", estado: "solicitada" }, dialogue: [] } },
+        { id: "e0000000-0000-4000-8000-000000000001", user_id: OTHER, created_at: "2026-10-05T18:00:00Z", data: { id: "e0000000-0000-4000-8000-000000000001", kind: "evidence", tipo: "entrevista", titulo: "Coordinación de un banco de alimentos (ejemplo)", fecha: "2026-09-20", createdAt: 1, contexto: "Voluntariado", horas: 20, resultados: [], vinculos: { "a0000000-0000-4000-8000-000000000002": ["RA1", "RA3"] }, evidencias: { idea: "Explica cómo organizó turnos de 15 voluntarios con una hoja compartida.", aplicacion: "Redujo los huecos de cobertura del sábado.", limites: "Reconoce que le falta formación en gestión de conflictos." }, criterios: { validez: 2, suficiencia: 2 }, falta: "Adjuntar la planilla de turnos y la confirmación de la coordinadora.", artefactos: [], verificacion: { nombre: "Coordinadora del banco", rol: "Responsable de voluntariado", contacto: "", estado: "solicitada" }, dialogue: [] } },
       ],
       // Demo only: one clearly fictitious subject so the flows can be explored. In production the catalog
       // holds only real subjects added by the coordination from their official teaching guides.
@@ -24,6 +24,7 @@
           resultados: [{ id: "RA1", texto: "Planifica y coordina el trabajo de un equipo para alcanzar objetivos compartidos." }, { id: "RA2", texto: "Gestiona conflictos y facilita la toma de decisiones en grupo." }, { id: "RA3", texto: "Comunica de forma clara la información del proyecto a las partes interesadas." }, { id: "RA4", texto: "Evalúa el desempeño del equipo y propone mejoras." }],
           fuente_url: "https://example.org/demo-no-oficial", estado: "publicada", created_at: "2026-10-01T09:00:00Z" },
       ],
+      acreditaciones: [{ id: "a0000000-0000-4000-8000-000000000002", user_id: OTHER, asignatura_id: CAT1, estado: "activa", conversacion: {}, recursos: {}, created_at: "2026-10-02T09:00:00Z" }],
       solicitudes_catalogo: [],
     };
   }
@@ -38,6 +39,7 @@
     select() { return this; }
     eq(k, v) { this.filters.push((r) => r[k] === v); return this; }
     neq(k, v) { this.filters.push((r) => r[k] !== v); return this; }
+    in(k, v) { this.filters.push((r) => v.includes(r[k])); return this; }
     order(k) { this.sort = k; return this; }
     maybeSingle() { this.one = "maybe"; return this; }
     single() { this.one = "single"; return this; }
@@ -51,6 +53,7 @@
       if (this.op === "select") {
         let rows = this.rows();
         if (this.t === "catalogo_asignaturas" && db.perfiles.find((p) => p.user_id === uid)?.role !== "coordinador") rows = rows.filter((r) => r.estado === "publicada");
+        if (this.t === "acreditaciones" || this.t === "evidencias") rows = rows.filter((r) => r.user_id === uid || db.perfiles.find((p) => p.user_id === uid)?.role === "coordinador");
         if (this.t === "perfiles") rows = rows.filter((r) => r.user_id === uid || (r.compartir_con_coordinacion && db.perfiles.find((p) => p.user_id === uid)?.role === "coordinador"));
         if (this.sort) rows = [...rows].sort((a, b) => String(a[this.sort] || "").localeCompare(String(b[this.sort] || "")));
         rows = structuredClone(rows);
@@ -59,8 +62,10 @@
       }
       if (this.op === "insert") {
         if (db[this.t].some((r) => r.user_id === this.payload.user_id && this.t === "perfiles")) return { error: { code: "23505" } };
-        const base = this.t === "perfiles" ? { role: "participante", consentimiento_at: null, compartir_con_coordinacion: false, objetivo: {} } : { id: crypto.randomUUID ? crypto.randomUUID() : String(Math.random()), user_id: uid, estado: this.t === "solicitudes_catalogo" ? "pendiente" : undefined, created_at: new Date().toISOString() };
-        db[this.t].push({ ...base, ...structuredClone(this.payload) });
+        const base = this.t === "perfiles" ? { role: "participante", consentimiento_at: null, compartir_con_coordinacion: false, objetivo: {} } : { id: crypto.randomUUID ? crypto.randomUUID() : String(Math.random()), user_id: uid, estado: this.t === "solicitudes_catalogo" ? "pendiente" : this.t === "acreditaciones" ? "activa" : undefined, created_at: new Date().toISOString(), ...(this.t === "acreditaciones" ? { conversacion: {}, recursos: {} } : {}) };
+        const row = { ...base, ...structuredClone(this.payload) };
+        db[this.t].push(row);
+        if (this.one) { persist(); return { data: structuredClone(row), error: null }; }
       }
       if (this.op === "update") this.rows().forEach((r) => Object.assign(r, structuredClone(this.payload)));
       if (this.op === "upsert") {
@@ -118,7 +123,8 @@ Las evidencias deben ser válidas, auténticas, suficientes y vigentes. A lo lar
 Orienta las preguntas hacia los resultados de aprendizaje con los que encaja lo que cuenta.
 Estilo: español; tono cálido y exigente; como mucho una frase que recoja algo concreto de lo que dijo y después UNA sola pregunta abierta; sin listas ni markdown; máximo 70 palabras. No prometas créditos.`;
   };
-  const myObj = () => { const p = db.perfiles.find((x) => x.user_id === db.session?.user?.id); return p?.objetivo?.resultados?.length ? p.objetivo : { generico: true, resultados: [{ id: "C1", texto: "Analiza críticamente información y argumentos, identificando evidencias, sesgos y límites." }, { id: "C2", texto: "Utiliza tecnologías digitales y datos de forma reflexiva, eficaz y ética." }, { id: "C3", texto: "Comunica ideas complejas con claridad, de forma oral y escrita, a públicos diversos." }, { id: "C4", texto: "Participa en contextos sociales y ciudadanos con criterio y responsabilidad." }, { id: "C5", texto: "Planifica y gestiona proyectos, y coordina o lidera equipos." }] }; };
+  const acObj = (id) => { const ac = db.acreditaciones.find((a) => a.id === id && a.user_id === db.session?.user?.id); return ac && db.catalogo_asignaturas.find((c) => c.id === ac.asignatura_id); };
+  const myObj = (acId) => { const a = acObj(acId); return a ? { ...a, generico: false } : { generico: true, resultados: [{ id: "C1", texto: "Analiza críticamente información y argumentos, identificando evidencias, sesgos y límites." }, { id: "C2", texto: "Utiliza tecnologías digitales y datos de forma reflexiva, eficaz y ética." }, { id: "C3", texto: "Comunica ideas complejas con claridad, de forma oral y escrita, a públicos diversos." }, { id: "C4", texto: "Participa en contextos sociales y ciudadanos con criterio y responsabilidad." }, { id: "C5", texto: "Planifica y gestiona proyectos, y coordina o lidera equipos." }] }; };
   const fail = (status, error) => new Response(JSON.stringify({ error }), { status, headers: { "Content-Type": "application/json" } });
   const json = (o) => new Response(JSON.stringify(o), { headers: { "Content-Type": "application/json" } });
 
@@ -126,13 +132,13 @@ Estilo: español; tono cálido y exigente; como mucho una frase que recoja algo 
   window.fetch = async (url, init = {}) => {
     const path = typeof url === "string" ? url : url.url;
     if (path === "/api/config") return json({ supabaseUrl: "demo", supabaseAnonKey: "demo" });
-    if (path === "/api/account") { const uid = db.session?.user?.id; db.perfiles = db.perfiles.filter((p) => p.user_id !== uid); db.evidencias = db.evidencias.filter((e) => e.user_id !== uid); persist(); return new Response(null, { status: 204 }); }
+    if (path === "/api/account") { const uid = db.session?.user?.id; db.perfiles = db.perfiles.filter((p) => p.user_id !== uid); db.evidencias = db.evidencias.filter((e) => e.user_id !== uid); db.acreditaciones = db.acreditaciones.filter((e) => e.user_id !== uid); persist(); return new Response(null, { status: 204 }); }
     if (!path.startsWith("/api/")) return realFetch(url, init);
     if (path === "/api/fuente") return fail(501, "En la demo no se pueden abrir enlaces; en la versión real sí.");
     if (path === "/api/investigar") return json({ nada: true });
     const sample = await use("sample");
     if (!sample) return fail(503, "La IA no está disponible en esta vista de la demo.");
-    const body = JSON.parse(init.body || "{}"), obj = myObj(), ids = obj.resultados.map((r) => r.id);
+    const body = JSON.parse(init.body || "{}"), obj = myObj(body.acreditacion_id), ids = obj.resultados.map((r) => r.id);
     try {
       if (path === "/api/chat") {
         const msgs = body.history.map((m) => ({ ...m }));
@@ -170,6 +176,24 @@ ${obj.resultados.map((r) => r.id + ": " + r.texto).join("\n")}
 Entrada (${body.contexto}, ${body.horas} h): «${body.texto}»
 Responde con solo JSON: {"titulo":"máx. 8 palabras","resultados":["ID"],"validez":0,"suficiencia":0,"falta":"una frase"}`, { modelTier: "quick" });
         return json({ ...o, resultados: (o.resultados || []).filter((x) => ids.includes(x)).slice(0, 3) });
+      }
+      if (body.kind === "vincular") {
+        const vinculos = {};
+        for (const ac of db.acreditaciones.filter((a) => a.user_id === db.session?.user?.id && !(body.excluir || []).includes(a.id))) {
+          const a = acObj(ac.id); if (!a) continue;
+          const o = await sample.json(`¿Qué resultados de aprendizaje de la asignatura «${a.asignatura}» respalda esta evidencia? Sé exigente: solo los que de verdad respalda.\nResultados:\n${a.resultados.map((r) => r.id + ": " + r.texto).join("\n")}\nEvidencia: «${String(body.texto).slice(0, 3000)}»\nResponde con solo JSON: {"resultados":["ID"]}`, { modelTier: "quick" });
+          const ok = (o?.resultados || []).filter((x) => a.resultados.some((r) => r.id === x));
+          if (ok.length) vinculos[ac.id] = ok;
+        }
+        return json({ vinculos });
+      }
+      if (body.kind === "relink") {
+        const a = acObj(body.acreditacion_id); if (!a) return fail(404, "No encuentro esa acreditación.");
+        const evs = db.evidencias.filter((e) => e.user_id === db.session?.user?.id).map((e) => e.data);
+        if (!evs.length) return json({ cobertura: [] });
+        const o = await sample.json(`Relaciona estas evidencias con los resultados de aprendizaje de la asignatura «${a.asignatura}». Sé exigente.\nResultados:\n${a.resultados.map((r) => r.id + ": " + r.texto).join("\n")}\nEvidencias:\n${evs.slice(-40).map((e) => `- id ${e.id} · «${e.titulo}» · ${Object.values(e.evidencias || {}).join(" ").slice(0, 500)}`).join("\n")}\nResponde con solo JSON: {"cobertura":[{"resultado_id":"RA1","evidencias":["id"]}]}`);
+        const ids2 = evs.map((e) => e.id);
+        return json({ cobertura: (o?.cobertura || []).filter((c) => a.resultados.some((r) => r.id === c.resultado_id)).map((c) => ({ resultado_id: c.resultado_id, evidencias: (c.evidencias || []).filter((x) => ids2.includes(x)) })) });
       }
       if (body.kind === "propose") {
         const me = db.perfiles.find((x) => x.user_id === db.session?.user?.id);

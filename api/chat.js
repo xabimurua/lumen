@@ -1,5 +1,5 @@
 // POST /api/chat — next interviewer turn, streamed as plain text.
-import { allowMethods, chargeAiCall, readJson, requireConsentedProfile, requireUser, sendError, HttpError } from "../lib/server.js";
+import { allowMethods, chargeAiCall, objetivoDe, readJson, requireConsentedProfile, requireUser, sendError, HttpError } from "../lib/server.js";
 import { parseHistory, streamInterviewTurn } from "../lib/claude.js";
 import { loadSource } from "../lib/fuente.js";
 
@@ -7,7 +7,7 @@ export default async function handler(req, res) {
   if (!allowMethods(req, res, ["POST"])) return;
   try {
     const user = await requireUser(req);
-    const perfil = await requireConsentedProfile(user.id);
+    await requireConsentedProfile(user.id);
     const body = readJson(req);
     const history = parseHistory(body.history);
     const titulo = String(body.titulo || "").slice(0, 300);
@@ -20,7 +20,7 @@ export default async function handler(req, res) {
     res.setHeader("Cache-Control", "no-store");
     res.setHeader("X-Accel-Buffering", "no");
     await streamInterviewTurn({
-      objetivo: perfil.objetivo,
+      objetivo: await objetivoDe(user.id, body.acreditacion_id),
       titulo,
       history,
       closing: body.closing === true,

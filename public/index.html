@@ -73,8 +73,7 @@
       <button class="on" data-view="agente"><span>✦</span>Hoy</button>
       <button data-view="trayectoria"><span>◴</span>Mi trayectoria <b class="badge" id="trayBadge" hidden></b></button>
       <button data-view="evidencias"><span>▤</span>Mis evidencias</button>
-      <button data-view="objetivo"><span>◎</span>Acreditación <b class="badge" id="propBadge" hidden></b></button>
-      <button data-view="expediente"><span>◈</span>Expediente</button>
+      <button data-view="arbol"><span>◎</span>Mis acreditaciones <b class="badge" id="propBadge" hidden></b></button>
       <button data-view="coordinacion" id="navCoord" hidden><span>◇</span>Coordinación</button>
       <button data-view="cuenta"><span>○</span>Mi cuenta</button>
     </nav>
@@ -91,10 +90,10 @@
     <section id="agente" class="view on">
       <div class="guide" id="guia"></div>
       <div class="workspace">
-        <div class="chat">
+        <div id="hoyChatSlot"><div class="chat" id="chatBox">
           <div class="chat-head">
             <div class="agent-icon" aria-hidden="true">✦</div>
-            <div><strong>Entrevista de evidencias</strong><small id="phase">Preparado para acompañarte</small></div>
+            <div><strong id="chatTitle">Entrevista de evidencias</strong><small id="phase">Preparado para acompañarte</small></div>
             <span class="status live" id="aiStatus">● IA conectada</span>
           </div>
           <div class="messages" id="messages" aria-live="polite"></div>
@@ -109,23 +108,17 @@
             </div>
             <div class="help" id="helpLine">Enter para enviar · Mayús+Enter para nueva línea · Entrevista guiada por Claude</div>
           </div>
-        </div>
+        </div></div>
         <div class="aside-panels">
           <div class="panel">
-            <h3>Hacia tu acreditación</h3>
-            <div class="subtle" id="targetLine"></div>
-            <div id="miniProgress"></div>
-            <div class="statrow">
-              <div class="stat"><strong id="kReady">0/0</strong><small>Resultados listos</small></div>
-              <div class="stat"><strong id="kHours">0</strong><small>Horas</small></div>
-              <div class="stat"><strong id="kEcts">0</strong><small>ECTS equiv.</small></div>
-            </div>
-            <div class="ra-mini" id="raMini"></div>
-            <button class="btn block" data-goto="expediente">Ver expediente →</button>
+            <h3>Mis acreditaciones</h3>
+            <div class="subtle">Cada una tiene su propia conversación, sus evidencias y su recorrido.</div>
+            <div id="miniArbol" class="mini-arbol"></div>
+            <button class="btn block" data-goto="arbol">Ver mi árbol →</button>
           </div>
           <div class="panel">
             <h3>Diario rápido</h3>
-            <div class="subtle">Dos minutos al final del día. Lumen lo vincula a tus resultados de aprendizaje.</div>
+            <div class="subtle">Dos minutos al final del día. Queda en tu trayectoria y Lumen lo vincula a tus acreditaciones.</div>
             <form class="form" id="diaryForm">
               <label class="field">Qué hiciste o aprendiste
                 <textarea id="dText" required placeholder="Ej.: Preparé el informe trimestral de ventas y aprendí a hacer tablas dinámicas para comparar regiones."></textarea>
@@ -194,17 +187,16 @@
       </div>
     </section>
 
-    <!-- OBJETIVO -->
-    <section id="objetivo" class="view">
-      <div class="full" id="miAcreditacion"></div>
-      <div class="full" id="recSection" hidden>
-        <h2>Recursos para completar tu acreditación</h2>
-        <p class="note">Libros, vídeos, artículos, pódcast y cursos reales para los resultados de aprendizaje que aún no tienes cubiertos. Cuando veas, leas o escuches uno, pulsa «Ya lo he visto: documentarlo» y Lumen te entrevistará sobre lo que aprendiste.</p>
-        <div class="row-actions"><button class="btn primary" type="button" id="recBtn">Recomiéndame recursos</button><span class="toast" id="recMsg" aria-live="polite"></span></div>
-        <div id="recList" class="items"></div>
-      </div>
+    <!-- ÁRBOL DE ACREDITACIONES -->
+    <section id="arbol" class="view">
       <div class="full">
-        <h2>¿Qué quieres acreditar?</h2>
+        <h2>Mi árbol de acreditaciones</h2>
+        <p class="note">Cada rama es una titulación y cada hoja, una asignatura que quieres que te reconozcan. Puedes tener varias a la vez, de temas distintos: cada una tiene su propia conversación con Lumen, sus evidencias y su recorrido. Una misma experiencia de tu trayectoria puede servir para varias.</p>
+        <div id="arbolTree" class="tree"></div>
+      </div>
+      <div id="nuevaAcreditacion">
+      <div class="full">
+        <h2>Añade una acreditación a tu árbol</h2>
         <p class="note">Dilo con tus palabras: una asignatura, una titulación o una competencia. Lumen buscará asignaturas reales de títulos oficiales que encajen (primero en universidades con convenio con Lumen y, si no, en el resto de universidades españolas) y te dirá cuánto cubren ya tus evidencias.</p>
         <form class="form" id="intentForm" style="max-width:860px">
           <label class="field">Lo que quiero acreditar
@@ -246,10 +238,42 @@
           <div><b>Vigencia</b>El aprendizaje es reciente. Lumen considera vigente lo ocurrido en los últimos cinco años.</div>
         </div>
       </div>
+      </div>
     </section>
 
-    <!-- EXPEDIENTE -->
-    <section id="expediente" class="view">
+    <!-- ESPACIO DE UNA ACREDITACIÓN -->
+    <section id="acreditacion" class="view">
+      <div class="full ac-head" id="acHead"></div>
+      <div class="tabs" role="tablist" id="acTabs">
+        <button role="tab" data-tab="chat" class="on">Conversación</button>
+        <button role="tab" data-tab="evid">Evidencias <b class="badge" id="acEvidCount"></b></button>
+        <button role="tab" data-tab="ruta">Recorrido</button>
+        <button role="tab" data-tab="exp">Expediente</button>
+      </div>
+      <div class="tabpanel on" data-panel="chat">
+        <div class="workspace">
+          <div id="acChatSlot"></div>
+          <div class="aside-panels"><div class="panel" id="acSide"></div></div>
+        </div>
+      </div>
+      <div class="tabpanel" data-panel="evid">
+        <div class="full">
+          <h2>Evidencias de esta acreditación</h2>
+          <p class="note">Las que has documentado en esta conversación y las de tu trayectoria que Lumen ha vinculado a sus resultados de aprendizaje. Puedes cambiar los vínculos de cada una.</p>
+          <div class="row-actions"><button class="btn primary" type="button" id="acDocBtn">＋ Documentar algo para esta acreditación</button><button class="btn" type="button" id="acRelinkBtn">Buscar en mi trayectoria lo que sirve aquí</button><span class="toast" id="acEvidMsg" aria-live="polite"></span></div>
+          <div id="acEvidenceList" class="items"></div>
+        </div>
+      </div>
+      <div class="tabpanel" data-panel="ruta">
+        <div class="full" id="miAcreditacion"></div>
+      <div class="full" id="recSection" hidden>
+        <h2>Recursos para completar tu acreditación</h2>
+        <p class="note">Libros, vídeos, artículos, pódcast y cursos reales para los resultados de aprendizaje que aún no tienes cubiertos. Cuando veas, leas o escuches uno, pulsa «Ya lo he visto: documentarlo» y Lumen te entrevistará sobre lo que aprendiste.</p>
+        <div class="row-actions"><button class="btn primary" type="button" id="recBtn">Recomiéndame recursos</button><span class="toast" id="recMsg" aria-live="polite"></span></div>
+        <div id="recList" class="items"></div>
+      </div>
+      </div>
+      <div class="tabpanel" data-panel="exp">
       <div class="full">
         <h2 id="dossierTitle">Expediente de reconocimiento</h2>
         <div id="dossierProgress"></div>
@@ -260,6 +284,7 @@
           <button class="btn primary" id="exportHtml">↓ Descargar expediente (HTML)</button>
         </div>
         <p class="notice" style="margin-top:20px">Lumen no concede créditos. El reconocimiento lo resuelve la universidad según su normativa. En España, la experiencia laboral y profesional puede reconocerse hasta el 15&nbsp;% de los créditos de una titulación, siempre que esté relacionada con sus competencias. Consulta con la secretaría o la comisión de reconocimiento de tu centro antes de presentar el expediente.</p>
+      </div>
       </div>
     </section>
 
@@ -272,10 +297,8 @@
       </div>
       <div class="full" id="coordDetail" hidden>
         <h2 id="coordName"></h2>
-        <div id="coordProgress"></div>
-        <div class="kpis" id="coordKpis"></div>
-        <div class="matrix" id="coordMatrix"></div>
-        <div class="row-actions"><button class="btn primary" id="coordExport">↓ Descargar su expediente (HTML)</button></div>
+        <div id="coordAcs"></div>
+        <h3>Todas sus evidencias</h3>
         <div class="items readonly" id="coordEvidences"></div>
       </div>
       <div class="full">

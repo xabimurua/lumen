@@ -23,6 +23,8 @@ const byDate = (a, b) => (a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : 0);
 /* ================= Session and data ================= */
 let googleCfg = null;
 let sb = null, session = null, perfil = null, objetivo = NO_OBJ, evidences = [], catalogo = [];
+/** The accreditation tree: one row per subject the person works towards, each with its own conversation and resources. */
+let acreditaciones = [], acActual = null, faltaTabla = false, vista = "agente";
 
 function showScreen(name) {
   for (const [id, n] of [["sLoading", "loading"], ["sLogin", "login"], ["sSent", "sent"], ["sConsent", "consent"], ["sApp", "app"]]) $(id).hidden = n !== name;
@@ -60,8 +62,8 @@ async function route() {
       showScreen("consent");
       return;
     }
-    await Promise.all([loadEvidences(), loadCatalog()]);
-    objetivo = resolveObjetivo(perfil.objetivo);
+    await Promise.all([loadEvidences(), loadCatalog(), loadAcreditaciones()]);
+    await migrarLegado();
     if (token !== routing) return;
     enterApp();
   } catch (e) {
@@ -97,6 +99,89 @@ function resolveObjetivo(stored) {
   if (a) return objFromSubject(a);
   if (stored?.asignatura_id && stored.resultados?.length) return { ...stored, estado: "retirada" };
   return NO_OBJ;
+}
+async function loadAcreditaciones() {
+  const { data, error } = await sb.from("acreditaciones").select("*").eq("user_id", session.user.id).order("created_at");
+  if (error) { console.error(error); faltaTabla = true; acreditaciones = []; return; }
+  faltaTabla = false; acreditaciones = data;
+}
+const acDe = (id) => acreditaciones.find((a) => a.id === id);
+/** The official subject behind an accreditation (read from the catalog, so its outcomes are always the official ones). */
+function subjectOf(ac) {
+  const a = ac && catalogo.find((x) => x.id === ac.asignatura_id);
+  return a ? objFromSubject(a) : { ...NO_OBJ, sinObjetivo: false, asignatura: "Asignatura retirada del catálogo", asignatura_id: ac?.asignatura_id, estado: "retirada" };
+}
+/** Evidences that count for one accreditation, each seen with that accreditation's linked outcomes. */
+const evsDe = (acId, lista = evidences) => lista.filter((e) => e.vinculos?.[acId]?.length || e.acreditacion_origen === acId).map((e) => ({ ...e, resultados: e.vinculos?.[acId] || [] }));
+/** Before the tree, a profile had a single target: it becomes the first accreditation, keeping its links and resources. */
+async function migrarLegado() {
+  const id = perfil.objetivo?.asignatura_id;
+  if (faltaTabla || !id || acreditaciones.some((a) => a.asignatura_id === id) || !catalogo.some((x) => x.id === id)) return;
+  const recursos = perfil.recursos?.asignatura_id === id ? { generado: perfil.recursos.generado, items: perfil.recursos.items || [] } : {};
+  const { data, error } = await sb.from("acreditaciones").insert({ asignatura_id: id, recursos }).select().single();
+  if (error) { console.error(error); return; }
+  acreditaciones.push(data);
+  for (const e of evidences) {
+    if (!e.resultados?.length || e.vinculos) continue;
+    e.vinculos = { [data.id]: e.resultados };
+    await sb.from("evidencias").upsert({ id: e.id, data: e });
+  }
+  await updatePerfil({ objetivo: {} }).catch(() => {});
+}
+async function createAcreditacion(a, cobertura) {
+  let ac = acreditaciones.find((x) => x.asignatura_id === a.id);
+  if (!ac) {
+    const { data, error } = await sb.from("acreditaciones").insert({ asignatura_id: a.id }).select().single();
+    if (error) throw new Error(faltaTabla ? "Falta un paso de instalación en la base de datos (007_acreditaciones.sql). Avisa a la coordinación." : "No se pudo añadir la acreditación. Inténtalo de nuevo.");
+    ac = data; acreditaciones.push(ac);
+  }
+  if (cobertura?.length) await aplicarCobertura(ac.id, cobertura);
+  else await relinkAc(ac.id).catch((e) => aiProblem(e));
+  return ac;
+}
+async function updateAc(ac, patch) {
+  Object.assign(ac, patch);
+  const { error } = await sb.from("acreditaciones").update(patch).eq("id", ac.id);
+  if (error) throw new Error("No se pudo guardar.");
+}
+async function removeAc(ac) {
+  const { error } = await sb.from("acreditaciones").delete().eq("id", ac.id);
+  if (error) throw new Error("No se pudo quitar.");
+  acreditaciones = acreditaciones.filter((x) => x.id !== ac.id);
+  delete chats[ac.id];
+}
+/** Adds links from a coverage map ({resultado_id, evidencias}) without removing the ones the person set by hand. */
+async function aplicarCobertura(acId, cobertura) {
+  const byEv = new Map();
+  for (const c of cobertura || []) for (const ev of c.evidencias) byEv.set(ev, [...(byEv.get(ev) || []), c.resultado_id]);
+  let n = 0;
+  for (const e of evidences) {
+    const add = byEv.get(e.id); if (!add?.length) continue;
+    const prev = e.vinculos?.[acId] || [], next = [...new Set([...prev, ...add])];
+    if (next.length === prev.length) continue;
+    await saveEvidence({ ...structuredClone(e), vinculos: { ...(e.vinculos || {}), [acId]: next } });
+    n++;
+  }
+  return n;
+}
+/** Asks Lumen which of all the person's evidences back this accreditation's outcomes. */
+async function relinkAc(acId) {
+  if (!aiOk || !evidences.length) return 0;
+  const { cobertura } = await (await api("/api/analyze", { kind: "relink", acreditacion_id: acId })).json();
+  return aplicarCobertura(acId, cobertura);
+}
+/** Links a new evidence to the outcomes of every other accreditation in the tree (in the background). */
+async function vincularEnArbol(e, excluir = []) {
+  if (!aiOk || !acreditaciones.some((a) => !excluir.includes(a.id))) return;
+  try {
+    const texto = [e.titulo, ...Object.values(e.evidencias || {})].join(". ");
+    const { vinculos } = await (await api("/api/analyze", { kind: "vincular", texto, contexto: e.contexto, horas: e.horas, excluir })).json();
+    if (!Object.keys(vinculos || {}).length) return;
+    const cur = evidences.find((x) => x.id === e.id); if (!cur) return;
+    const v = { ...(cur.vinculos || {}) };
+    for (const [k, ids] of Object.entries(vinculos)) v[k] = [...new Set([...(v[k] || []), ...ids])];
+    await saveEvidence({ ...structuredClone(cur), vinculos: v });
+  } catch (err) { aiProblem(err); }
 }
 async function loadEvidences() {
   const { data, error } = await sb.from("evidencias").select("id,data,created_at").eq("user_id", session.user.id).order("created_at");
@@ -236,47 +321,102 @@ function choices(items) {
   const box = document.createElement("div"); box.className = "choices";
   items.forEach((item) => { const b = document.createElement("button"); b.textContent = item; b.onclick = () => { box.remove(); submit(item); }; box.append(b); });
   $("messages").append(box); $("messages").scrollTop = $("messages").scrollHeight;
+  if (!busy) persistDraft();
 }
 const PHASES = { intent: "Buscando qué puedes acreditar", start: "Preparado para acompañarte", type: "Eligiendo qué documentar", titleAsk: "Eligiendo qué documentar", dialogue: "Recogiendo evidencias", review: "Síntesis final", done: "Evidencia registrada" };
 function setPhase() { $("phase").textContent = PHASES[stage] || "En conversación"; }
-function ask(text, options) { bubble(text); setPhase(); if (options) choices(options); $("answer").focus(); }
+function ask(text, options) { bubble(text); setPhase(); if (options) choices(options); else persistDraft(); $("answer").focus(); }
 
 let stage = "start", draft = null, busy = false;
 function newDraft() {
   draft = { id: uid(), titulo: "", fuente: "", url: "", material: null, contexto: null, turns: [], used: [], history: [], createdAt: Date.now() };
 }
+const TYPE_OPTIONS = ["Una tarea de mi trabajo", "Un proyecto que llevé", "Un voluntariado", "Un curso, libro o podcast"];
 function begin(seed) {
   newDraft();
   if (seed) { startTopic(seed); return; }
   stage = "type";
-  ask("¿Qué quieres hacer hoy? Cuéntame algo que hayas aprendido (una tarea del trabajo, un proyecto, un voluntariado, un curso o algo que resolviste en tu vida diaria), pega el enlace o el título de lo que viste, escuchaste o leíste, o adjunta el material con el clip 📎. También puedes decirme qué te gustaría acreditar.", ["Una tarea de mi trabajo", "Un proyecto que llevé", "Un voluntariado", "Un curso, libro o podcast", "Quiero acreditar algo concreto"]);
+  if (chatAc()) {
+    const o = subjectOf(acDe(chatAc()));
+    ask(`¿Qué quieres documentar para «${o.asignatura}»? Cuéntame una experiencia en la que hayas puesto en práctica algo de esta asignatura, pega el enlace o el título de lo que viste, escuchaste o leíste, o adjunta el material con el clip 📎.`, TYPE_OPTIONS);
+    return;
+  }
+  ask("¿Qué quieres hacer hoy? Cuéntame algo que hayas aprendido (una tarea del trabajo, un proyecto, un voluntariado, un curso o algo que resolviste en tu vida diaria), pega el enlace o el título de lo que viste, escuchaste o leíste, o adjunta el material con el clip 📎. También puedes decirme qué te gustaría acreditar.", [...TYPE_OPTIONS, "Quiero acreditar algo concreto"]);
 }
 function setBusy(b) { busy = b; $("send").disabled = b; if (!b) persistDraft(); }
-/** An interview in progress survives a reload: it is kept in this browser until it is closed. */
-const draftKey = () => "lumen_entrevista_" + session.user.id;
-function persistDraft() {
-  try {
-    if (draft && (stage === "dialogue" || stage === "review") && draft.history.length) localStorage.setItem(draftKey(), JSON.stringify({ draft, stage, guardado: Date.now() }));
-    else localStorage.removeItem(draftKey());
-  } catch {}
+
+/* Each accreditation has its own conversation; "hoy" is the general one. Only one is on screen at a time:
+   the chat box moves between the «Hoy» view and the accreditation's workspace, and each conversation is
+   saved on its own (the accreditation's in the database, the general one in this browser). */
+let chatKey = "hoy";
+const chats = {}, persistTimers = {};
+const chatAc = () => (chatKey === "hoy" ? null : chatKey);
+const hoyKey = () => "lumen_hoy_" + session.user.id;
+function snapshotChat() {
+  const keepDraft = draft && ["type", "titleAsk", "dialogue", "review"].includes(stage);
+  return {
+    msgs: [...$("messages").querySelectorAll(".msg")].filter((m) => !m.querySelector(".thinking")).slice(-60).map((m) => ({ who: m.classList.contains("user") ? "user" : "agent", text: m.querySelector(".bubble").textContent })),
+    choices: [...$("messages").querySelectorAll(".choices button")].map((b) => b.textContent),
+    draft: keepDraft ? draft : null, stage: keepDraft ? stage : stage === "done" ? "done" : "start", guardado: Date.now(),
+  };
 }
-function restoreDraft() {
-  let saved = null;
-  try { saved = JSON.parse(localStorage.getItem(draftKey())); } catch {}
-  if (!saved?.draft?.history?.length || Date.now() - saved.guardado > 7 * 864e5) return false;
-  draft = saved.draft; stage = saved.stage;
-  bubble(`Retomamos tu entrevista sobre «${draft.titulo}» donde la dejaste. Si prefieres empezar otra cosa, escribe «empezar de nuevo».`);
-  for (const m of draft.history.slice(-6)) bubble(m.content, m.role === "user" ? "user" : "agent");
-  setPhase();
-  if (draft.history.at(-1).role === "user") agentTurn(draft.history.at(-1).content, { closing: stage === "review" });
+function persistDraft(now = false) {
+  if (!session || !$("messages").childElementCount) return;
+  const key = chatKey, snap = snapshotChat();
+  chats[key] = snap;
+  if (key === "hoy") { try { localStorage.setItem(hoyKey(), JSON.stringify(snap)); } catch {} return; }
+  clearTimeout(persistTimers[key]);
+  persistTimers[key] = setTimeout(() => saveChat(key), now ? 0 : 800);
+}
+function saveChat(key) {
+  clearTimeout(persistTimers[key]); delete persistTimers[key];
+  const ac = acDe(key); if (ac && chats[key]) updateAc(ac, { conversacion: chats[key] }).catch(() => {});
+}
+/** Saves pending conversations right away when the person leaves the page or switches tab. */
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") Object.keys(persistTimers).forEach(saveChat); });
+function mountChat() {
+  const slot = chatKey === "hoy" ? $("hoyChatSlot") : $("acChatSlot");
+  if ($("chatBox").parentElement !== slot) slot.append($("chatBox"));
+  $("chatTitle").textContent = chatKey === "hoy" ? "Entrevista de evidencias" : "Conversación · " + subjectOf(acDe(chatKey)).asignatura;
+}
+/** Shows the conversation of «hoy» or of one accreditation. Returns false while Lumen is still answering. */
+function useChat(key) {
+  if (key === chatKey && $("messages").childElementCount) { mountChat(); return true; }
+  if (busy) return false;
+  persistDraft(true);
+  chatKey = key; mountChat();
+  $("messages").innerHTML = "";
+  let snap = chats[key];
+  if (!snap) { if (key === "hoy") { try { snap = JSON.parse(localStorage.getItem(hoyKey())); } catch {} } else snap = acDe(key)?.conversacion; }
+  draft = snap?.draft || null; stage = draft ? snap.stage : snap?.stage === "done" ? "done" : "start";
+  if (snap?.msgs?.length) {
+    for (const m of snap.msgs) bubble(m.text, m.who);
+    if (draft && ["dialogue", "review"].includes(stage)) bubble(`Seguimos con «${draft.titulo}» donde lo dejaste. Si prefieres empezar otra cosa, escribe «empezar de nuevo».`);
+    if (snap.choices?.length) choices(snap.choices);
+    setPhase();
+    if (draft?.history?.length && draft.history.at(-1).role === "user" && ["dialogue", "review"].includes(stage)) agentTurn(draft.history.at(-1).content, { closing: stage === "review" });
+  } else greet(key);
   return true;
+}
+function greet(key) {
+  if (key === "hoy") {
+    bubble(`Hola${perfil.nombre ? ", " + perfil.nombre.split(" ")[0] : ""}. Te ayudo a convertir lo que aprendes cada día en evidencias que una universidad pueda reconocer.\n\nCuéntame algo que hayas hecho o aprendido y te haré preguntas hasta tener lo que pide un expediente: qué sabes hacer, un caso real, horas, un producto que lo pruebe y alguien que pueda confirmarlo.\n\nLo que documentes aquí queda en tu trayectoria y Lumen lo vincula a las acreditaciones de tu árbol. Si quieres trabajar una acreditación concreta, ábrela en «Mis acreditaciones»: cada una tiene su propia conversación.`);
+    stage = "start"; setPhase();
+    choices(perfil.trayectoria?.buscada ? ["Empezar a documentar", "Quiero acreditar algo concreto"] : ["Empezar a documentar", "Cargar mi experiencia"]);
+    return;
+  }
+  const ac = acDe(key), o = subjectOf(ac), p = o.resultados.length ? progressOf(o, evsDe(key)) : null;
+  const debil = p?.sts.filter((x) => x.s.n < 5).sort((a, b) => a.s.n - b.s.n)[0];
+  bubble(`Esta es la conversación de «${o.asignatura}» (${o.titulacion}, ${o.universidad}). Aquí documentamos lo que te sirve para sus ${o.resultados.length} resultados de aprendizaje oficiales, y te preguntaré pensando en ellos.${p ? `\n\nLlevas un ${p.pct} %: ${p.ready} de ${p.sts.length} resultados listos para presentar.` : ""}${debil ? ` Lo que más te falta ahora es ${debil.r.id}: ${debil.r.texto}` : ""}\n\nCuéntame una experiencia, pega un enlace o adjunta material.`);
+  stage = "start"; setPhase();
+  choices(["Documentar una experiencia", "¿Qué me falta?", "Recomiéndame recursos"]);
 }
 
 async function agentTurn(userText, { closing = false } = {}) {
   const el = bubble("Pensando…"); el.classList.add("thinking"); setPhase(); setBusy(true);
   try {
     if (!aiOk) throw new Error("offline");
-    const r = await api("/api/chat", { titulo: draft.titulo, history: draft.history, closing, fuente: draft.material && { path: draft.material.path, name: draft.material.name }, contexto: draft.contexto && { path: draft.contexto.path, name: draft.contexto.name } });
+    const r = await api("/api/chat", { acreditacion_id: chatAc(), titulo: draft.titulo, history: draft.history, closing, fuente: draft.material && { path: draft.material.path, name: draft.material.name }, contexto: draft.contexto && { path: draft.contexto.path, name: draft.contexto.name } });
     const reader = r.body.getReader(), dec = new TextDecoder();
     let text = "";
     for (;;) {
@@ -369,11 +509,30 @@ const closingQuestion = () => "Para cerrar: en dos o tres frases, ¿qué sabes h
 async function submit(value) {
   value = value.trim(); if (!value || busy) return;
   document.querySelectorAll(".choices").forEach((x) => x.remove());
-  if (stage === "done" && value === "Ver mis evidencias") { show("evidencias"); return; }
-  if (value === "Ver propuestas de acreditación") { show("objetivo"); $("propSection").scrollIntoView(); return; }
+  if (stage === "done" && value === "Ver mis evidencias") { if (chatAc()) setTab("evid"); else show("evidencias"); return; }
+  if (value === "Ver propuestas de acreditación") { show("arbol"); $("propSection").scrollIntoView(); return; }
   if (value === "Cargar mi experiencia") { show("trayectoria"); return; }
+  if (value === "Abrir la acreditación" && lastAcCreada) { openAcreditacion(lastAcCreada); return; }
+  if (stage === "done" && value === "Añadir a mi árbol" && lastPropuesta) {
+    bubble(value, "user");
+    const el = bubble("Añadiendo la acreditación y vinculando tus evidencias…"); el.classList.add("thinking"); setBusy(true);
+    try {
+      const ac = await adoptProposal(lastPropuesta.id);
+      lastAcCreada = ac.id; lastPropuesta = null;
+      el.textContent = `Hecho: «${subjectOf(ac).asignatura}» ya está en tu árbol, con ${evsDe(ac.id).length} evidencias vinculadas. Ábrela para trabajarla en su propia conversación.`;
+      choices(["Abrir la acreditación", "Documentar otra cosa"]);
+    } catch (e) { el.textContent = e.message; }
+    finally { el.classList.remove("thinking"); setBusy(false); }
+    return;
+  }
+  if (chatAc() && (stage === "start" || stage === "done")) {
+    if (value === "Recomiéndame recursos") { setTab("ruta"); requestResources(); return; }
+    if (value === "¿Qué me falta?") { bubble(value, "user"); explainGaps(); return; }
+    if (value === "Documentar una experiencia") { bubble(value, "user"); begin(); return; }
+  }
   bubble(value, "user"); $("answer").value = "";
   if (/^empezar de nuevo\.?$/.test(normalize(value))) { draft = null; stage = "start"; persistDraft(); begin(); return; }
+  if ((stage === "start" || stage === "done") && value === "Quiero acreditar algo concreto" && !chatAc()) { stage = "type"; }
   if (stage === "start" || stage === "done") {
     if (/^(empezar|documentar)/.test(normalize(value))) { begin(); return; }
     begin(value); return;
@@ -387,10 +546,11 @@ async function submit(value) {
       const list = await requestProposals(value);
       const p = list?.find((x) => x.origen === "usuario" && x.estado === "nueva");
       el.classList.remove("thinking");
-      el.textContent = p ? `Encaja «${p.asignatura}» (${p.titulacion}, ${p.universidad}, ${fmtN(p.ects)} ECTS)${p.convenio ? ", una universidad con convenio con Lumen" : ", una asignatura real de un título oficial; esa universidad aún no tiene convenio con Lumen"}. Con lo que has documentado, cubres un ${p.encaje} % de sus resultados de aprendizaje. ${p.motivo}${p.siguientes_pasos?.[0] ? "\n\nPrimer paso: " + p.siguientes_pasos[0] : ""}${lastNoMatch ? "\n\n" + lastNoMatch : ""}` : `${lastNoMatch || "No he encontrado esa asignatura en el catálogo oficial de Lumen."} Puedes pedir a la coordinación que la añada desde «Acreditación».`;
-      stage = "done"; setPhase(); choices(["Ver propuestas de acreditación", "Documentar otra cosa"]);
+      lastPropuesta = p || null;
+      el.textContent = p ? `Encaja «${p.asignatura}» (${p.titulacion}, ${p.universidad}, ${fmtN(p.ects)} ECTS)${p.convenio ? ", una universidad con convenio con Lumen" : ", una asignatura real de un título oficial; esa universidad aún no tiene convenio con Lumen"}. Con lo que has documentado, cubres un ${p.encaje} % de sus resultados de aprendizaje. ${p.motivo}${p.siguientes_pasos?.[0] ? "\n\nPrimer paso: " + p.siguientes_pasos[0] : ""}${lastNoMatch ? "\n\n" + lastNoMatch : ""}\n\n¿La añado a tu árbol de acreditaciones? Tendrá su propia conversación, sus evidencias y su recorrido.` : `${lastNoMatch || "No he encontrado esa asignatura en el catálogo oficial de Lumen."} Puedes pedir a la coordinación que la añada desde «Mis acreditaciones».`;
+      stage = "done"; setPhase(); choices(p ? ["Añadir a mi árbol", "Ver propuestas de acreditación", "Documentar otra cosa"] : ["Ver propuestas de acreditación", "Documentar otra cosa"]);
     } catch (e) {
-      el.classList.remove("thinking"); el.textContent = e.message + " Puedes definir el objetivo a mano en «Acreditación».";
+      el.classList.remove("thinking"); el.textContent = e.message + " Puedes elegir la asignatura a mano en «Mis acreditaciones».";
       stage = "done"; choices(["Ver propuestas de acreditación", "Documentar otra cosa"]);
     } finally { setBusy(false); }
     return;
@@ -421,7 +581,7 @@ async function analyzeInterview(synthesis) {
   const fallback = { titulo: "", evidencias: { sintesis: synthesis }, resultados: ruleLink(userText + " " + draft.titulo), validez: 1, suficiencia: userText.length > 900 ? 2 : 1, contexto: "", horas: 0, fecha: "", verificador_nombre: "", verificador_rol: "", falta: "Añade un producto y la confirmación de alguien que haya visto tu trabajo." };
   if (!aiOk) return fallback;
   try {
-    const o = await (await api("/api/analyze", { kind: "interview", titulo: draft.titulo, history: draft.history, fuente: draft.material && { path: draft.material.path, name: draft.material.name }, contexto: draft.contexto && { path: draft.contexto.path, name: draft.contexto.name } })).json();
+    const o = await (await api("/api/analyze", { kind: "interview", acreditacion_id: chatAc(), titulo: draft.titulo, history: draft.history, fuente: draft.material && { path: draft.material.path, name: draft.material.name }, contexto: draft.contexto && { path: draft.contexto.path, name: draft.contexto.name } })).json();
     const ev = {}; for (const k of ["idea", "aplicacion", "argumentacion", "conexion", "limites", "fidelidad"]) if (o.evidencias?.[k]?.trim()) ev[k] = o.evidencias[k].trim();
     ev.sintesis = synthesis;
     return { ...o, evidencias: ev };
@@ -435,18 +595,21 @@ async function completeInterview(synthesis) {
   const el = bubble("Ordenando tus evidencias…"); el.classList.add("thinking"); setBusy(true);
   const r = await analyzeInterview(synthesis);
   const e = {
-    id: draft.id, kind: "evidence", tipo: "entrevista", titulo: r.titulo || draft.titulo, fuente: draft.fuente, url: draft.url, material: draft.material, contexto: draft.contexto,
+    id: draft.id, kind: "evidence", tipo: "entrevista", titulo: r.titulo || draft.titulo, fuente: draft.fuente, url: draft.url, material: draft.material, contexto_web: draft.contexto,
     fecha: /^\d{4}-\d{2}-\d{2}$/.test(r.fecha) ? r.fecha : today(), createdAt: draft.createdAt,
     contexto: CONTEXTOS.includes(r.contexto) ? r.contexto : "", horas: num(r.horas), resultados: r.resultados || [], evidencias: r.evidencias,
     criterios: { validez: clamp03(r.validez), suficiencia: clamp03(r.suficiencia) }, falta: r.falta || "",
     artefactos: [], verificacion: { nombre: r.verificador_nombre || "", rol: r.verificador_rol || "", contacto: "", estado: "sin solicitar" },
     dialogue: draft.history.map((m) => ({ role: m.role, text: m.content })), ai: aiOk,
   };
+  const ac = chatAc();
+  if (ac) { e.acreditacion_origen = ac; e.vinculos = { [ac]: e.resultados }; }
   el.classList.remove("thinking");
   try {
     await saveEvidence(e);
-    el.textContent = `He registrado «${e.titulo}» como evidencia${e.resultados.length ? " para " + e.resultados.join(", ") : ""}.${e.falta ? "\n\nPara que sea suficiente: " + e.falta : ""}\n\nEn «Mis evidencias» puedes adjuntar el producto, revisar las horas y pedir la confirmación de ${e.verificacion.nombre || "alguien que haya visto tu trabajo"}.`;
+    el.textContent = `He registrado «${e.titulo}» como evidencia${ac && e.resultados.length ? " para " + e.resultados.join(", ") : ""}.${e.falta ? "\n\nPara que sea suficiente: " + e.falta : ""}\n\nEn ${ac ? "la pestaña «Evidencias»" : "«Mis evidencias»"} puedes adjuntar el producto, revisar las horas y pedir la confirmación de ${e.verificacion.nombre || "alguien que haya visto tu trabajo"}.${acreditaciones.length > (ac ? 1 : 0) ? " Lumen también la está vinculando a las demás acreditaciones de tu árbol." : ""}`;
     stage = "done"; draft = null; setPhase(); choices(["Ver mis evidencias", "Documentar otra cosa"]);
+    vincularEnArbol(e, ac ? [ac] : []);
     maybeAutoPropose();
   } catch (err) {
     el.textContent = err.message + " Escribe tu síntesis otra vez para reintentarlo.";
@@ -463,9 +626,9 @@ $("diaryForm").addEventListener("submit", async (ev) => {
   const id = uid(), f = $("dFile").files?.[0];
   try {
     const artefactos = f ? [await uploadFile(f, id)] : [];
-    let link = { titulo: text.split(/[.!?\n]/)[0].slice(0, 70), resultados: ruleLink(text), validez: 1, suficiencia: text.length > 400 ? 2 : 1, falta: "Amplíala con una entrevista para ganar profundidad." };
+    let link = { titulo: text.split(/[.!?\n]/)[0].slice(0, 70), resultados: [], validez: 1, suficiencia: text.length > 400 ? 2 : 1, falta: "Amplíala con una entrevista para ganar profundidad." };
     if (aiOk) {
-      try { link = await (await api("/api/analyze", { kind: "diary", texto: text, contexto: $("dCtx").value, horas: num($("dHours").value) })).json(); }
+      try { link = { ...(await (await api("/api/analyze", { kind: "diary", texto: text, contexto: $("dCtx").value, horas: num($("dHours").value) })).json()), resultados: [] }; }
       catch (e) { if (e.status === 429 || e.status === 403) aiState(false, e.message); }
     }
     await saveEvidence({
@@ -479,7 +642,9 @@ $("diaryForm").addEventListener("submit", async (ev) => {
       if (lectura) await saveEvidence({ ...structuredClone(e), artefactos: [{ ...artefactos[0], lectura }] });
     }
     $("dText").value = ""; $("dFile").value = ""; $("dHours").value = "1"; $("dDate").value = today();
-    $("dToast").textContent = `Guardado${link.resultados?.length ? " · vinculado a " + link.resultados.join(", ") : ""}`;
+    $("dToast").textContent = acreditaciones.length ? "Guardado. Lumen lo está vinculando a tus acreditaciones…" : "Guardado en tu trayectoria.";
+    const nueva = evidences.find((x) => x.id === id);
+    if (nueva) vincularEnArbol(nueva).then(() => { const v = evidences.find((x) => x.id === id)?.vinculos || {}; const n = Object.keys(v).length; if (acreditaciones.length) $("dToast").textContent = n ? `Guardado · cuenta para ${n} acreditaci${n === 1 ? "ón" : "ones"} de tu árbol` : "Guardado en tu trayectoria."; });
     maybeAutoPropose();
   } catch (e) {
     $("dToast").textContent = e.message;
@@ -508,57 +673,36 @@ const convenioPill = (estado) => estado === "publicada" ? '<span class="pill ok"
 function subjectFacts(o) {
   return [o.nivel, o.ects && fmtN(o.ects) + " ECTS", o.caracter, o.curso_academico && "Curso " + o.curso_academico, o.codigo_asignatura && "Código " + o.codigo_asignatura, o.codigo_ruct && "RUCT " + o.codigo_ruct].filter(Boolean).map((x) => `<span class="pill">${safe(x)}</span>`).join("");
 }
+/** «Recorrido»: progress per official outcome and the evidences that got the person here, in time order. */
 function renderMiAcreditacion() {
-  const box = $("miAcreditacion");
-  if (objetivo.sinObjetivo) {
-    box.innerHTML = `<h2>Tu acreditación</h2><div class="empty">Todavía no has elegido una asignatura. Busca la tuya en el catálogo oficial, di qué quieres acreditar o deja que Lumen te proponga una con tus evidencias.</div>`;
-    return;
-  }
-  box.innerHTML = `<h2>Tu acreditación</h2>
+  const box = $("miAcreditacion"), ac = acDe(acActual);
+  if (!ac) { box.innerHTML = ""; return; }
+  const o = objetivo, evs = evsDe(ac.id), sorted = [...evs].sort(byDate);
+  box.innerHTML = `<h2>Tu recorrido</h2>
+    <p class="note">Cómo avanzas en cada resultado de aprendizaje oficial de la asignatura. Cada uno queda listo para presentar con cinco comprobaciones: al menos dos evidencias, un producto, la confirmación de un tercero, profundidad suficiente y vigencia.</p>
     <div class="subject">
-      <div class="subject-head"><div style="min-width:0"><b>${safe(objetivo.asignatura)}</b><small class="subtle">${safe(objetivo.titulacion)} · ${safe(objetivo.universidad)}</small></div>
-        <a class="btn small" href="${safe(objetivo.fuente_url)}" target="_blank" rel="noopener">Guía docente oficial ↗</a></div>
-      <div class="facts">${convenioPill(objetivo.estado)}${subjectFacts(objetivo)}</div>
-      ${objetivo.estado === "detectada" ? '<p class="note">Es una asignatura real de un título oficial, pero esta universidad aún no tiene convenio con Lumen. Lumen gestionará el acuerdo; mientras tanto, todo lo que documentes ya cuenta para tu expediente.</p>' : ""}
-      ${objetivo.estado === "retirada" ? '<p class="falta">La coordinación ha retirado esta asignatura del catálogo. Elige otra o consulta con la coordinación.</p>' : ""}
-      ${progressHtml(objetivo, evidences)}
-    </div>`;
+      <div class="facts">${convenioPill(o.estado)}${subjectFacts(o)}</div>
+      ${o.estado === "detectada" ? '<p class="note">Es una asignatura real de un título oficial, pero esta universidad aún no tiene convenio con Lumen. Lumen gestionará el acuerdo; mientras tanto, todo lo que documentes ya cuenta para tu expediente.</p>' : ""}
+      ${o.estado === "retirada" ? '<p class="falta">Esta asignatura ya no está en el catálogo. Consulta con la coordinación o quítala de tu árbol.</p>' : ""}
+      ${progressHtml(o, evs)}
+    </div>
+    <h3 style="margin-top:22px">Cómo has llegado hasta aquí</h3>
+    ${sorted.length ? `<ol class="ac-path">${sorted.map((e) => `<li><span class="subtle">${safe(fmtDate(e.fecha))}</span><b>${safe(e.titulo)}</b><span class="chips">${e.resultados.map((id) => `<span class="pill ra">${safe(id)}</span>`).join("") || '<span class="pill">Sin resultado vinculado</span>'}${e.acreditacion_origen === ac.id ? '<span class="pill">De esta conversación</span>' : ""}</span></li>`).join("")}</ol>` : '<div class="empty">Todavía no hay evidencias para esta acreditación. Empieza en la pestaña «Conversación» o pulsa «Buscar en mi trayectoria lo que sirve aquí» en «Evidencias».</div>'}`;
 }
 function renderCatalog() {
   const q = normalize($("catSearch").value.trim());
   const list = catalogo.filter((a) => ["publicada", "detectada"].includes(a.estado) && (!q || normalize(`${a.asignatura} ${a.titulacion} ${a.universidad} ${a.codigo_asignatura}`).includes(q)));
-  $("catList").innerHTML = list.length ? list.slice(0, 50).map((a) => `<div class="cat-row"><div style="min-width:0"><b>${safe(a.asignatura)}</b><small>${safe(a.titulacion)} · ${safe(a.universidad)} · ${fmtN(Number(a.ects))} ECTS · ${a.resultados.length} resultados de aprendizaje</small></div>
-    <div class="row-actions" style="margin-top:0">${convenioPill(a.estado)}<a class="btn small" href="${safe(a.fuente_url)}" target="_blank" rel="noopener">Guía ↗</a>${objetivo.asignatura_id === a.id ? '<span class="pill ok">Tu acreditación</span>' : `<button class="btn small accent" data-choose="${safe(a.id)}">Elegir</button>`}</div></div>`).join("")
+  $("catList").innerHTML = list.length ? list.slice(0, 50).map((a) => { const ac = acreditaciones.find((x) => x.asignatura_id === a.id); return `<div class="cat-row"><div style="min-width:0"><b>${safe(a.asignatura)}</b><small>${safe(a.titulacion)} · ${safe(a.universidad)} · ${fmtN(Number(a.ects))} ECTS · ${a.resultados.length} resultados de aprendizaje</small></div>
+    <div class="row-actions" style="margin-top:0">${convenioPill(a.estado)}<a class="btn small" href="${safe(a.fuente_url)}" target="_blank" rel="noopener">Guía ↗</a>${ac ? `<button class="btn small" data-ac="${safe(ac.id)}">En tu árbol · abrir</button>` : `<button class="btn small accent" data-choose="${safe(a.id)}">Añadir a mi árbol</button>`}</div></div>`; }).join("")
     : `<div class="empty">${catalogo.some((a) => ["publicada", "detectada"].includes(a.estado)) ? "Ninguna asignatura coincide con la búsqueda." : "Todavía no hay asignaturas aquí. Di arriba qué quieres acreditar o pulsa «Que Lumen proponga con mis evidencias»: Lumen las buscará en las universidades."}</div>`;
 }
 $("catSearch").addEventListener("input", renderCatalog);
-/** Sets an official subject as the target and re-links every evidence to its outcomes. */
-async function setObjective(a, cobertura) {
-  const obj = objFromSubject(a);
-  await updatePerfil({ objetivo: { asignatura_id: a.id, asignatura: a.asignatura, titulacion: a.titulacion, universidad: a.universidad, ects: Number(a.ects), resultados: a.resultados } });
-  objetivo = obj;
-  if (!cobertura && evidences.length && aiOk) {
-    try {
-      const { propuestas: list } = await (await api("/api/analyze", { kind: "propose", intencion: `${a.asignatura} (${a.titulacion}, ${a.universidad})` })).json();
-      perfil.propuestas = list;
-      cobertura = list.find((p) => p.asignatura_id === a.id)?.cobertura;
-    } catch {}
-  }
-  const byEv = new Map();
-  for (const c of cobertura || []) for (const ev of c.evidencias) byEv.set(ev, [...(byEv.get(ev) || []), c.resultado_id]);
-  for (const e of evidences) {
-    const next = byEv.get(e.id) || [];
-    if (JSON.stringify(next) !== JSON.stringify(e.resultados || [])) await saveEvidence({ ...structuredClone(e), resultados: next });
-  }
-  render();
-  if (perfil.recursos?.asignatura_id !== a.id) requestResources();
-}
 $("catList").addEventListener("click", async (ev) => {
   const b = ev.target.closest("[data-choose]"); if (!b) return;
   const a = catalogo.find((x) => x.id === b.dataset.choose); if (!a) return;
-  b.disabled = true; b.textContent = "Vinculando tus evidencias…";
-  try { await setObjective(a); $("miAcreditacion").scrollIntoView({ behavior: "smooth" }); }
-  catch { b.disabled = false; b.textContent = "Elegir"; }
+  b.disabled = true; b.textContent = "Añadiendo y vinculando tus evidencias…";
+  try { const ac = await createAcreditacion(a); openAcreditacion(ac.id); }
+  catch (e) { b.disabled = false; b.textContent = "Añadir a mi árbol"; $("intentMsg").textContent = e.message; }
 });
 $("requestForm").addEventListener("submit", async (ev) => {
   ev.preventDefault();
@@ -569,7 +713,8 @@ $("requestForm").addEventListener("submit", async (ev) => {
 
 /* ================= Accreditation proposals ================= */
 const AUTO_PROPOSE_EVERY = 3;
-let proposing = false, lastNoMatch = "";
+let proposing = false, lastNoMatch = "", lastPropuesta = null, lastAcCreada = null;
+const enArbol = (asignaturaId) => acreditaciones.find((x) => x.asignatura_id === asignaturaId);
 const propuestas = () => perfil?.propuestas || [];
 const nuevasLumen = () => propuestas().filter((p) => p.estado === "nueva" && p.origen === "lumen");
 
@@ -592,7 +737,7 @@ async function maybeAutoPropose() {
   if (evidences.length - (perfil.propuestas_n_evidencias || 0) < AUTO_PROPOSE_EVERY) return;
   try {
     const list = await requestProposals("");
-    const best = list?.find((p) => p.origen === "lumen");
+    const best = list?.find((p) => p.origen === "lumen" && p.estado === "nueva" && !enArbol(p.asignatura_id));
     if (best) {
       bubble(`Mientras documentabas, he revisado tus ${evidences.length} evidencias. Encajan con «${best.asignatura}» (${best.titulacion}): ya cubres un ${best.encaje} %. ${best.motivo}`);
       // Keep whatever options the chat was already offering (e.g. after closing an interview).
@@ -606,9 +751,8 @@ async function adoptProposal(id) {
   if (!catalogo.some((x) => x.id === p.asignatura_id)) await loadCatalog();
   const a = catalogo.find((x) => x.id === p.asignatura_id && ["publicada", "detectada"].includes(x.estado));
   if (!a) throw new Error("Esa asignatura ya no está en el catálogo.");
-  const list = propuestas().map((x) => ({ ...x, estado: x.id === id ? "adoptada" : x.estado === "adoptada" ? "nueva" : x.estado }));
-  await updatePerfil({ propuestas: list });
-  await setObjective(a, p.cobertura);
+  await updatePerfil({ propuestas: propuestas().map((x) => (x.id === id ? { ...x, estado: "adoptada" } : x)) });
+  return createAcreditacion(a, p.cobertura);
 }
 async function discardProposal(id) {
   await updatePerfil({ propuestas: propuestas().filter((x) => x.id !== id) });
@@ -616,7 +760,8 @@ async function discardProposal(id) {
 }
 function renderProposals() {
   const list = propuestas().filter((p) => p.asignatura_id);
-  $("propBadge").hidden = !nuevasLumen().length; $("propBadge").textContent = nuevasLumen().length;
+  const nuevas = nuevasLumen().filter((p) => !enArbol(p.asignatura_id)).length;
+  $("propBadge").hidden = !nuevas; $("propBadge").textContent = nuevas;
   if (!list.length) {
     $("propList").innerHTML = `<div class="empty">${evidences.length < 2 ? "Cuando tengas al menos dos evidencias, Lumen te propondrá acreditaciones por su cuenta. También puedes decirle arriba qué quieres acreditar." : "Aún no hay propuestas. Pulsa «Que Lumen proponga con mis evidencias» o di arriba qué quieres acreditar."}</div>`;
     return;
@@ -624,9 +769,10 @@ function renderProposals() {
   const evTitle = (id) => evidences.find((e) => e.id === id)?.titulo || "evidencia";
   $("propList").innerHTML = list.map((p) => {
     const covered = (p.cobertura || []).filter((c) => c.evidencias.length).length;
-    return `<article class="prop${p.estado === "adoptada" ? " adoptada" : ""}">
+    const ac = enArbol(p.asignatura_id);
+    return `<article class="prop${ac ? " adoptada" : ""}">
       <div class="prop-head"><div style="min-width:0"><b>${safe(p.asignatura)}</b><small class="subtle">${safe(p.titulacion)} · ${safe(p.universidad)}${p.ects ? " · " + fmtN(p.ects) + " ECTS" : ""} · <a href="${safe(p.fuente_url)}" target="_blank" rel="noopener">guía docente oficial</a></small></div>
-        <span class="facts">${p.convenio ? '<span class="pill ok">Con convenio Lumen</span>' : '<span class="pill warn">Sin convenio todavía</span>'}<span class="pill">${p.estado === "adoptada" ? "Tu acreditación" : p.origen === "usuario" ? "Lo que pediste" : "Propuesta de Lumen"}</span></span></div>
+        <span class="facts">${p.convenio ? '<span class="pill ok">Con convenio Lumen</span>' : '<span class="pill warn">Sin convenio todavía</span>'}<span class="pill">${ac ? "En tu árbol" : p.origen === "usuario" ? "Lo que pediste" : "Propuesta de Lumen"}</span></span></div>
       ${p.intencion ? `<p class="subtle">Pediste: «${safe(p.intencion)}»</p>` : ""}
       <div class="fit"><strong>${p.encaje} %</strong><div><span class="track" style="display:block"><span class="fill${p.encaje >= 70 ? " ok" : ""}" style="display:block;width:${p.encaje}%"></span></span>de encaje · ${covered} de ${p.resultados.length} resultados con evidencias</div></div>
       <p>${safe(p.motivo)}</p>
@@ -634,7 +780,7 @@ function renderProposals() {
         <div class="ra-cover" style="margin-top:8px">${p.resultados.map((r) => { const ev = p.cobertura?.find((c) => c.resultado_id === r.id)?.evidencias || []; return `<div><span class="${ev.length ? "yes" : "no"}">${ev.length ? "✓" : "—"}</span><span><b>${safe(r.id)}</b> ${safe(r.texto)}${ev.length ? `<br><small class="subtle">${ev.map((id) => safe(evTitle(id))).join(" · ")}</small>` : ""}</span></div>`; }).join("")}</div>
       </details>
       ${p.siguientes_pasos?.length ? `<div><b style="font-size:13px">Para completarla</b><ul>${p.siguientes_pasos.map((x) => `<li>${safe(x)}</li>`).join("")}</ul></div>` : ""}
-      ${p.estado === "adoptada" ? "" : `<div class="row-actions" style="margin-top:0"><button class="btn small accent" data-prop="adopt" data-id="${safe(p.id)}">Elegir esta acreditación</button><button class="btn small" data-prop="discard" data-id="${safe(p.id)}">Descartar</button></div>`}
+      <div class="row-actions" style="margin-top:0">${ac ? `<button class="btn small" data-ac="${safe(ac.id)}">Abrir en mi árbol</button>` : `<button class="btn small accent" data-prop="adopt" data-id="${safe(p.id)}">Añadir a mi árbol</button><button class="btn small" data-prop="discard" data-id="${safe(p.id)}">Descartar</button>`}</div>
     </article>`;
   }).join("");
 }
@@ -642,7 +788,7 @@ $("propList").addEventListener("click", async (ev) => {
   const b = ev.target.closest("[data-prop]"); if (!b) return;
   b.disabled = true;
   try {
-    if (b.dataset.prop === "adopt") { b.textContent = "Adoptando…"; await adoptProposal(b.dataset.id); $("intentMsg").textContent = "Acreditación elegida. Tus evidencias se han vinculado a sus resultados de aprendizaje oficiales."; }
+    if (b.dataset.prop === "adopt") { b.textContent = "Añadiendo y vinculando tus evidencias…"; const ac = await adoptProposal(b.dataset.id); openAcreditacion(ac.id); }
     else await discardProposal(b.dataset.id);
   } catch (e) { b.disabled = false; $("intentMsg").textContent = e.message || "No se pudo guardar. Inténtalo de nuevo."; }
 });
@@ -666,19 +812,110 @@ $("intentForm").addEventListener("submit", (ev) => {
 $("discoverBtn").onclick = () => runProposal("", $("discoverBtn"));
 
 /* ================= Views ================= */
-const TITLES = { agente: ["Plataforma de evidencias de aprendizaje", "¿Qué has aprendido hoy?"], trayectoria: ["Mi trayectoria", "Todo lo que ya has hecho, en un solo sitio."], evidencias: ["Evidencias", "Cada aprendizaje, con sus pruebas."], objetivo: ["Acreditación", "¿Dónde puede contar lo que sabes?"], expediente: ["Expediente", "Lo que podrás presentar a la universidad."], coordinacion: ["Coordinación", "Seguimiento del piloto."], cuenta: ["Cuenta", "Tus datos, bajo tu control."] };
+const TITLES = { agente: ["Plataforma de evidencias de aprendizaje", "¿Qué has aprendido hoy?"], trayectoria: ["Mi trayectoria", "Todo lo que ya has hecho, en un solo sitio."], evidencias: ["Evidencias", "Cada aprendizaje, con sus pruebas."], arbol: ["Mis acreditaciones", "Tu árbol de acreditaciones."], acreditacion: ["Mis acreditaciones", ""], coordinacion: ["Coordinación", "Seguimiento del piloto."], cuenta: ["Cuenta", "Tus datos, bajo tu control."] };
 function show(id) {
+  if (id === "acreditacion" && !acDe(acActual)) id = "arbol";
+  if ((id === "agente" || id === "acreditacion") && !useChat(id === "agente" ? "hoy" : acActual)) {
+    $("helpLine").textContent = "Espera a que Lumen termine de responder antes de cambiar de conversación.";
+    return false;
+  }
+  vista = id;
+  objetivo = id === "acreditacion" ? subjectOf(acDe(acActual)) : NO_OBJ;
   document.querySelectorAll(".view").forEach((v) => v.classList.toggle("on", v.id === id));
-  document.querySelectorAll("[data-view]").forEach((b) => b.classList.toggle("on", b.dataset.view === id));
-  $("eyebrow").textContent = TITLES[id][0]; $("pagetitle").textContent = TITLES[id][1];
-  if (id === "objetivo") renderCatalog();
+  document.querySelectorAll("[data-view]").forEach((b) => b.classList.toggle("on", b.dataset.view === (id === "acreditacion" ? "arbol" : id)));
+  $("eyebrow").textContent = TITLES[id][0]; $("pagetitle").textContent = id === "acreditacion" ? objetivo.asignatura : TITLES[id][1];
   if (id === "cuenta") { $("aName").value = perfil.nombre || ""; $("aShare").checked = !!perfil.compartir_con_coordinacion; }
   if (id === "coordinacion") { loadPeople(); loadCoordCatalog(); }
   render(); window.scrollTo(0, 0);
+  return true;
 }
 document.querySelectorAll("[data-view]").forEach((x) => (x.onclick = () => show(x.dataset.view)));
 document.querySelectorAll("[data-goto]").forEach((x) => (x.onclick = () => show(x.dataset.goto)));
-document.querySelectorAll("[data-go-chat]").forEach((x) => (x.onclick = () => { show("agente"); if (!busy) { bubble("Quiero documentar algo nuevo.", "user"); begin(); } }));
+document.querySelectorAll("[data-go-chat]").forEach((x) => (x.onclick = () => { if (show("agente") && !busy) { bubble("Quiero documentar algo nuevo.", "user"); begin(); } }));
+
+/* ================= One accreditation: conversation, evidences, path and dossier ================= */
+let acTab = "chat";
+function openAcreditacion(id, tab = "chat") {
+  if (!acDe(id)) return;
+  const prev = acActual; acActual = id;
+  if (!show("acreditacion")) { acActual = prev; return; }
+  setTab(tab);
+}
+function setTab(t) {
+  acTab = t;
+  document.querySelectorAll("#acTabs [data-tab]").forEach((b) => { b.classList.toggle("on", b.dataset.tab === t); b.setAttribute("aria-selected", b.dataset.tab === t); });
+  document.querySelectorAll("#acreditacion .tabpanel").forEach((p) => p.classList.toggle("on", p.dataset.panel === t));
+  render();
+  if (t === "chat") $("answer").focus();
+}
+$("acTabs").addEventListener("click", (ev) => { const b = ev.target.closest("[data-tab]"); if (b) setTab(b.dataset.tab); });
+document.addEventListener("click", (ev) => {
+  const b = ev.target.closest("[data-ac]"); if (!b) return;
+  openAcreditacion(b.dataset.ac);
+});
+const leafProgress = (ac) => { const o = subjectOf(ac); return o.resultados.length ? progressOf(o, evsDe(ac.id)) : { pct: 0, ready: 0, sts: [] }; };
+function renderArbol() {
+  const box = $("arbolTree");
+  if (faltaTabla) { box.innerHTML = '<div class="empty">Falta un paso de instalación: hay que ejecutar <b>supabase/007_acreditaciones.sql</b> en Supabase. Mientras tanto no se pueden guardar acreditaciones.</div>'; return; }
+  if (!acreditaciones.length) { box.innerHTML = '<div class="empty">Tu árbol todavía está vacío. Añade abajo tu primera acreditación: di a Lumen qué quieres acreditar, deja que te proponga una con tus evidencias o elígela en la lista.</div>'; return; }
+  const ramas = new Map();
+  for (const ac of acreditaciones) { const o = subjectOf(ac), k = `${o.titulacion}|${o.universidad}`; ramas.set(k, [...(ramas.get(k) || []), ac]); }
+  box.innerHTML = [...ramas.entries()].map(([k, list]) => { const [tit, uni] = k.split("|"); return `<div class="branch">
+      <div class="branch-head"><span aria-hidden="true">🎓</span><div style="min-width:0"><b>${safe(tit || "Titulación")}</b><small class="subtle">${safe(uni)}</small></div></div>
+      <div class="leaves">${list.map((ac) => { const o = subjectOf(ac), p = leafProgress(ac), n = evsDe(ac.id).length; return `<button class="leaf" data-ac="${safe(ac.id)}">
+        <span class="leaf-top"><b>${safe(o.asignatura)}</b>${convenioPill(o.estado)}</span>
+        <span class="track" style="display:block"><span class="fill${p.pct === 100 ? " ok" : ""}" style="display:block;width:${p.pct}%"></span></span>
+        <small class="subtle">${p.pct} % · ${p.ready} de ${p.sts.length} resultados listos · ${n} evidencia${n === 1 ? "" : "s"}${o.ects ? " · " + fmtN(o.ects) + " ECTS" : ""}</small>
+        <span class="leaf-go">Abrir conversación →</span></button>`; }).join("")}</div></div>`; }).join("");
+}
+function renderMiniArbol() {
+  $("miniArbol").innerHTML = acreditaciones.length ? acreditaciones.map((ac) => { const o = subjectOf(ac), p = leafProgress(ac); return `<button class="mini-leaf" data-ac="${safe(ac.id)}"><span class="mini-leaf-t"><b>${safe(o.asignatura)}</b><small class="subtle">${safe(o.titulacion)}</small></span><span class="track" style="display:block"><span class="fill${p.pct === 100 ? " ok" : ""}" style="display:block;width:${p.pct}%"></span></span><small class="subtle">${p.pct} %</small></button>`; }).join("")
+    : '<p class="subtle">Todavía no tienes ninguna. Lumen te propondrá acreditaciones a medida que documentes, o puedes elegirlas tú.</p>';
+}
+function renderAcreditacion() {
+  const ac = acDe(acActual), o = (objetivo = subjectOf(ac)), evs = evsDe(ac.id), p = o.resultados.length ? progressOf(o, evs) : null;
+  $("acHead").innerHTML = `<button class="btn small" type="button" data-goto-arbol>← Mi árbol</button>
+    <div class="subject-head" style="margin-top:12px"><div style="min-width:0"><b>${safe(o.asignatura)}</b><small class="subtle">${safe(o.titulacion)} · ${safe(o.universidad)}</small></div>
+      <div class="row-actions" style="margin-top:0">${convenioPill(o.estado)}${o.fuente_url ? `<a class="btn small" href="${safe(o.fuente_url)}" target="_blank" rel="noopener">Guía docente oficial ↗</a>` : ""}<button class="btn small" type="button" id="acRemove">Quitar de mi árbol</button></div></div>
+    ${p ? `<div class="ac-progress"><span class="track" style="display:block"><span class="fill${p.pct === 100 ? " ok" : ""}" style="display:block;width:${p.pct}%"></span></span><small class="subtle">${p.pct} % · ${p.ready} de ${p.sts.length} resultados de aprendizaje listos · ${evs.length} evidencia${evs.length === 1 ? "" : "s"} · ${fmtN(p.horas)} h</small></div>` : ""}`;
+  $("acEvidCount").textContent = evs.length;
+  $("acSide").innerHTML = `<h3>Resultados de aprendizaje</h3><div class="subtle">Los de la guía docente oficial y cómo vas en cada uno. Lumen pregunta pensando en ellos.</div>
+    <div class="ra-mini">${(p?.sts || []).map(({ r, s }) => `<div title="${safe(r.texto)}"><b>${safe(r.id)}</b><span class="track"><span class="fill${s.n === 5 ? " ok" : ""}" style="display:block;width:${s.n * 20}%"></span></span><span class="subtle">${s.n}/5</span></div>`).join("")}</div>
+    <button class="btn block" type="button" data-tab-go="ruta" style="margin-top:12px">Ver mi recorrido →</button>
+    <button class="btn block" type="button" data-tab-go="exp" style="margin-top:8px">Ver expediente →</button>`;
+  renderEvidenceList($("acEvidenceList"), evs, o, true, { acId: ac.id });
+  renderMiAcreditacion(); renderResources();
+  $("dossierTitle").textContent = "Expediente · " + o.asignatura;
+  $("dossierProgress").innerHTML = `<p class="note">${safe(o.titulacion)} · ${safe(o.universidad)}${o.fuente_url ? ` · <a href="${safe(o.fuente_url)}" target="_blank" rel="noopener">guía docente oficial</a>` : ""}</p>${progressHtml(o, evs, { compact: true })}`;
+  $("dossierKpis").innerHTML = kpisHtml(o, evs);
+  $("dossierMatrix").innerHTML = matrixHtml(o, evs);
+}
+$("acHead").addEventListener("click", async (ev) => {
+  if (ev.target.closest("[data-goto-arbol]")) { show("arbol"); return; }
+  const b = ev.target.closest("#acRemove"); if (!b) return;
+  if (!b.dataset.armed) { b.dataset.armed = "1"; b.textContent = "Pulsa otra vez: se borra su conversación (tus evidencias se quedan)"; setTimeout(() => { if (b.isConnected) { delete b.dataset.armed; b.textContent = "Quitar de mi árbol"; } }, 5000); return; }
+  if (busy) return;
+  b.disabled = true;
+  try { const ac = acDe(acActual); if (chatKey === ac.id) { chatKey = "hoy"; $("messages").innerHTML = ""; } await removeAc(ac); acActual = null; show("arbol"); }
+  catch (e) { b.disabled = false; b.textContent = e.message; }
+});
+$("acSide").addEventListener("click", (ev) => { const b = ev.target.closest("[data-tab-go]"); if (b) setTab(b.dataset.tabGo); });
+$("acDocBtn").onclick = () => { setTab("chat"); if (!busy) { document.querySelectorAll(".choices").forEach((x) => x.remove()); bubble("Quiero documentar algo nuevo para esta acreditación.", "user"); begin(); } };
+$("acRelinkBtn").onclick = async () => {
+  const b = $("acRelinkBtn"), msg = $("acEvidMsg");
+  if (!aiOk) { msg.textContent = "La IA no está disponible ahora mismo."; return; }
+  b.disabled = true; msg.textContent = "Lumen está revisando toda tu trayectoria…";
+  try { const n = await relinkAc(acActual); msg.textContent = n ? `${n} evidencia${n === 1 ? "" : "s"} más vinculada${n === 1 ? "" : "s"} a esta acreditación.` : "No he encontrado más evidencias que sirvan aquí."; }
+  catch (e) { aiProblem(e); msg.textContent = e.message; }
+  finally { b.disabled = false; }
+};
+const CHECK_TXT = { cantidad: "al menos dos evidencias", producto: "un producto adjunto", tercero: "la confirmación de un tercero", profundidad: "más profundidad (explicar, aplicar, dar ejemplos)", vigente: "una evidencia de los últimos cinco años" };
+function explainGaps() {
+  const p = progressOf(objetivo, evsDe(acActual));
+  const faltan = p.sts.filter((x) => x.s.n < 5);
+  bubble(!faltan.length ? "¡Tienes todos los resultados de aprendizaje listos! Descarga tu expediente en la pestaña «Expediente»." : `Esto es lo que te falta, del resultado más flojo al más avanzado:\n\n${faltan.sort((a, b) => a.s.n - b.s.n).map(({ r, s }) => `${r.id} (${s.n}/5) — ${r.texto}\nTe falta: ${Object.entries(s.checks).filter(([, ok]) => !ok).map(([k]) => CHECK_TXT[k]).join(", ")}.`).join("\n\n")}`);
+  choices(["Documentar una experiencia", "Recomiéndame recursos"]);
+}
 
 let entered = false;
 function enterApp() {
@@ -688,29 +925,26 @@ function enterApp() {
   $("navCoord").hidden = perfil.role !== "coordinador";
   $("chatDrive").hidden = !googleCfg;
   $("dDate").value = today();
-  render();
-  if (!entered && restoreDraft()) entered = true;
   if (!entered) {
     entered = true;
-    if (!pendingTrace && !perfil.trayectoria?.buscada && !evidences.length) show("trayectoria");
-    bubble(`Hola${perfil.nombre ? ", " + perfil.nombre.split(" ")[0] : ""}. Te ayudo a convertir lo que aprendes cada día en evidencias que una universidad pueda reconocer.\n\nCuéntame algo que hayas hecho o aprendido y te haré preguntas hasta tener lo que pide un expediente: qué sabes hacer, un caso real, horas, un producto que lo pruebe y alguien que pueda confirmarlo.\n\nSi ya sabes qué quieres acreditar, dímelo. Si no, a medida que documentes te iré proponiendo dónde puede contar lo que sabes.`);
-    choices(perfil.trayectoria?.buscada ? ["Empezar a documentar"] : ["Empezar a documentar", "Cargar mi experiencia"]);
-  }
+    useChat("hoy");
+    if (!pendingTrace && !perfil.trayectoria?.buscada && !evidences.length) show("trayectoria"); else show("agente");
+  } else render();
   if (pendingTrace) { const p = pendingTrace; pendingTrace = null; setTimeout(() => autoTraceOnSignup(p), 0); }
 }
 
 /* ================= Guide: where you are and what comes next ================= */
 function guideSteps() {
   const pend = pendientes().length, cargada = !!tray().buscada || evidences.length > 0;
-  const p = objetivo.sinObjetivo ? null : progressOf(objetivo, evidences);
+  const prog = acreditaciones.map((ac) => ({ ac, o: subjectOf(ac), p: leafProgress(ac) })).filter((x) => x.p.sts.length);
+  const mejor = [...prog].sort((a, b) => b.p.pct - a.p.pct)[0], abierta = prog.filter((x) => x.p.pct < 100).sort((a, b) => b.p.pct - a.p.pct)[0];
   const flojas = evidences.filter((e) => scoresOf(e).suficiencia < 2);
-  const debil = p?.sts.filter((x) => x.s.n < 5).sort((a, b) => a.s.n - b.s.n)[0];
   return [
     { t: "Carga tu experiencia", done: cargada, d: "Sube tu currículum o deja que Lumen te busque en internet: en unos minutos tendrás tu trayectoria convertida en evidencias.", cta: "Cargar mi experiencia", go: () => show("trayectoria") },
     { t: "Revisa lo encontrado", done: cargada && !pend, d: `Hay ${pend} experiencia${pend === 1 ? "" : "s"} que Lumen no está seguro de que sea${pend === 1 ? "" : "n"} tuya${pend === 1 ? "" : "s"}.`, cta: "Revisar", go: () => { show("trayectoria"); $("trayReview").scrollIntoView(); } },
-    { t: "Elige tu acreditación", done: !objetivo.sinObjetivo, d: "Lumen te propone asignaturas reales de universidades donde tu experiencia puede contar.", cta: "Ver acreditaciones", go: () => show("objetivo") },
-    { t: "Completa tus evidencias", done: !!p && p.pct === 100, d: flojas.length ? `${flojas.length} evidencia${flojas.length === 1 ? "" : "s"} necesita${flojas.length === 1 ? "" : "n"} más detalle. Con 3 preguntas por evidencia basta.` : debil ? `Te falta reforzar ${debil.r.id}: ${debil.r.texto.slice(0, 90)}` : "Añade pruebas y confirmaciones a tus evidencias.", cta: flojas.length ? "Completar evidencias" : "Ver qué me falta", go: () => (flojas.length ? (show("evidencias"), openQuick(flojas[0].id)) : show("objetivo")) },
-    { t: "Descarga tu expediente", done: false, d: "Tu expediente está listo para presentarlo a la universidad.", cta: "Ver expediente", go: () => show("expediente") },
+    { t: "Crea tu árbol de acreditaciones", done: acreditaciones.length > 0, d: "Elige una o varias asignaturas reales de universidades donde tu experiencia puede contar. Cada una tendrá su propia conversación, sus evidencias y su recorrido.", cta: "Ver propuestas", go: () => show("arbol") },
+    { t: "Completa tus evidencias", done: prog.length > 0 && !abierta, d: flojas.length ? `${flojas.length} evidencia${flojas.length === 1 ? "" : "s"} necesita${flojas.length === 1 ? "" : "n"} más detalle. Con 3 preguntas por evidencia basta.` : abierta ? `En «${abierta.o.asignatura}» llevas un ${abierta.p.pct} %. Sigue en su conversación.` : "Añade pruebas y confirmaciones a tus evidencias.", cta: flojas.length ? "Completar evidencias" : "Seguir", go: () => (flojas.length ? (show("evidencias"), openQuick(flojas[0].id)) : abierta ? openAcreditacion(abierta.ac.id) : show("arbol")) },
+    { t: "Descarga tu expediente", done: false, d: mejor ? `Descarga el expediente de «${mejor.o.asignatura}» para presentarlo a la universidad.` : "Cuando tengas una acreditación, podrás descargar su expediente.", cta: "Ver expediente", go: () => (mejor ? openAcreditacion(mejor.ac.id, "exp") : show("arbol")) },
   ];
 }
 function renderGuide() {
@@ -724,23 +958,11 @@ function renderGuide() {
 function dots(v) { return `<span class="dots${v === 3 ? " full" : ""}">${[1, 2, 3].map((i) => `<i class="${i <= v ? "on" : ""}"></i>`).join("")}</span>`; }
 function render() {
   if (!perfil) return;
-  const sts = objetivo.resultados.map((r) => ({ r, s: outcomeStatus(r, evidences) }));
-  const ready = sts.filter((x) => x.s.n === 5).length, h = totalHours(evidences), [e1, e2] = ectsRange(h);
-  $("targetLine").textContent = objetivo.sinObjetivo ? "Aún no has elegido una asignatura del catálogo oficial." : `${objetivo.asignatura} · ${objetivo.titulacion} · ${objetivo.universidad}`;
-  $("miniProgress").innerHTML = progressHtml(objetivo, evidences, { compact: true });
-  $("kReady").textContent = `${ready}/${sts.length}`; $("kHours").textContent = fmtN(h); $("kEcts").textContent = h ? fmtN(e1) + "–" + fmtN(e2) : "0";
-  $("raMini").innerHTML = sts.map(({ r, s }) => `<div title="${safe(r.texto)}"><b>${safe(r.id)}</b><span class="track"><span class="fill${s.n === 5 ? " ok" : ""}" style="display:block;width:${s.n * 20}%"></span></span><span class="subtle">${s.n}/5</span></div>`).join("");
-  renderEvidenceList($("evidenceList"), evidences, objetivo, true);
-  $("dossierTitle").textContent = objetivo.sinObjetivo ? "Expediente de reconocimiento" : "Expediente · " + objetivo.asignatura;
-  $("dossierProgress").innerHTML = objetivo.sinObjetivo ? '<div class="empty">Elige una asignatura del catálogo oficial en «Acreditación» para construir tu expediente.</div>' : `<p class="note">${safe(objetivo.titulacion)} · ${safe(objetivo.universidad)} · <a href="${safe(objetivo.fuente_url)}" target="_blank" rel="noopener">guía docente oficial</a></p>${progressHtml(objetivo, evidences, { compact: true })}`;
-  $("dossierKpis").innerHTML = kpisHtml(objetivo, evidences);
-  $("dossierMatrix").innerHTML = matrixHtml(objetivo, evidences);
-  renderGuide();
-  renderMiAcreditacion();
-  renderResources();
-  renderProposals();
-  renderTrayectoria();
-  renderCatalog();
+  if (vista === "acreditacion" && !acDe(acActual)) { show("arbol"); return; }
+  renderGuide(); renderMiniArbol(); renderArbol(); renderProposals(); renderTrayectoria();
+  if (vista === "arbol") renderCatalog();
+  if (vista === "evidencias") renderEvidenceList($("evidenceList"), evidences, NO_OBJ, true); else $("evidenceList").innerHTML = "";
+  if (vista === "acreditacion") renderAcreditacion(); else $("acEvidenceList").innerHTML = "";
 }
 function kpisHtml(obj, evs) {
   const sts = obj.resultados.map((r) => outcomeStatus(r, evs)), ready = sts.filter((s) => s.n === 5).length, h = totalHours(evs), [e1, e2] = ectsRange(h);
@@ -754,17 +976,21 @@ function matrixHtml(obj, evs) {
   const ck = (b) => (b ? '<span class="yes">✓</span>' : '<span class="no">—</span>');
   return `<table><thead><tr><th>Resultado de aprendizaje</th><th>Evidencias</th><th>≥2</th><th>Producto</th><th>Tercero</th><th>Profundidad</th><th>Vigente</th><th>Horas</th><th>Estado</th></tr></thead><tbody>${obj.resultados.map((r) => { const s = outcomeStatus(r, evs); return `<tr><td><b>${safe(r.id)}</b> ${safe(r.texto)}</td><td class="c">${s.linked.length}</td><td class="c">${ck(s.checks.cantidad)}</td><td class="c">${ck(s.checks.producto)}</td><td class="c">${ck(s.checks.tercero)}</td><td class="c">${ck(s.checks.profundidad)}</td><td class="c">${ck(s.checks.vigente)}</td><td class="c">${fmtN(s.horas)}</td><td><span class="pill ${s.cls}">${s.label}</span></td></tr>`; }).join("")}</tbody></table>`;
 }
-function renderEvidenceList(container, evs, obj, editable) {
+/** Evidence cards. Inside an accreditation (acId) the outcome links are that accreditation's and can be edited;
+    elsewhere each card shows which accreditations of the tree (acs) it counts for. */
+function renderEvidenceList(container, evs, obj, editable, { acId = null, acs = acreditaciones } = {}) {
   const open = new Set([...container.querySelectorAll("details[open]")].map((d) => d.dataset.id));
   const rev = [...evs].reverse();
   if (!rev.length) { container.innerHTML = `<div class="empty">${editable ? "Aún no hay evidencias. Haz una entrevista o escribe en el diario rápido y aparecerán aquí con su valoración." : "Esta persona aún no tiene evidencias."}</div>`; return; }
   container.innerHTML = rev.map((e) => {
     const s = scoresOf(e), v = e.verificacion || {};
     const vPill = v.estado === "confirmada" ? '<span class="pill ok">Confirmada por tercero</span>' : v.estado === "solicitada" ? '<span class="pill warn">Confirmación solicitada</span>' : '<span class="pill">Sin confirmar</span>';
-    const raTags = (e.resultados || []).map((id) => { const r = obj.resultados.find((x) => x.id === id); return `<span class="pill ra" title="${safe(r?.texto || "Este resultado ya no está en el objetivo")}">${safe(id)}</span>`; }).join("") || '<span class="pill">Sin resultado vinculado</span>';
+    const raTags = acId
+      ? (e.resultados || []).map((id) => { const r = obj.resultados.find((x) => x.id === id); return `<span class="pill ra" title="${safe(r?.texto || "Este resultado ya no está en la asignatura")}">${safe(id)}</span>`; }).join("") || '<span class="pill">Sin resultado vinculado</span>'
+      : acs.filter((ac) => e.vinculos?.[ac.id]?.length).map((ac) => `<button class="pill ra" type="button" data-ac="${safe(ac.id)}" title="${safe(e.vinculos[ac.id].join(", "))}">◎ ${safe(subjectOf(ac).asignatura)}</button>`).join("") || `<span class="pill">${acs.length ? "Todavía no cuenta para ninguna acreditación" : "Sin acreditación"}</span>`;
     const texts = Object.entries(e.evidencias || {}).map(([k, t]) => `<p><strong>${safe(EV_LABELS[k] || k)}:</strong> ${safe(t)}</p>`).join("");
     const mat = (e.material ? `<button class="pill" data-act="open" data-path="${safe(e.material.path)}" title="Contenido del que aprendió">📄 ${safe(e.material.name)}</button>` : "")
-      + (e.contexto ? `<button class="pill" data-act="open" data-path="${safe(e.contexto.path)}" title="Información buscada en internet durante la entrevista">🔎 Contexto de internet</button>` : "");
+      + (e.contexto_web?.path ? `<button class="pill" data-act="open" data-path="${safe(e.contexto_web.path)}" title="Información buscada en internet durante la entrevista">🔎 Contexto de internet</button>` : "");
     const arts = mat + (e.artefactos || []).map((a) => a.url
       ? `<a class="pill" href="${safe(a.url)}" target="_blank" rel="noopener">🔗 ${safe(a.name)}</a>`
       : `<button class="pill" data-act="open" data-path="${safe(a.path)}">${a.origen === "drive" ? "🗂" : a.origen === "cv" ? "📄" : "📎"} ${safe(a.name)}</button>`).join("");
@@ -791,9 +1017,9 @@ function renderEvidenceList(container, evs, obj, editable) {
           <label class="field">Horas dedicadas<input type="number" min="0" step="0.5" id="h-${id}" value="${safe(e.horas || 0)}"></label>
           <label class="field">Contexto<select id="c-${id}">${["", ...CONTEXTOS].map((o) => `<option${o === e.contexto ? " selected" : ""}>${o}</option>`).join("")}</select></label>
         </div>
-        <div class="field" style="margin-top:10px">Resultados de aprendizaje vinculados
+        ${acId ? `<div class="field" style="margin-top:10px">Resultados de aprendizaje de esta acreditación que respalda
           <div class="chips">${obj.resultados.map((r) => `<label class="pill ra" title="${safe(r.texto)}"><input type="checkbox" data-ra="${safe(r.id)}" data-ev="${id}"${(e.resultados || []).includes(r.id) ? " checked" : ""}> ${safe(r.id)}</label>`).join("")}</div>
-        </div>
+        </div>` : ""}
         <div class="edit-grid">
           <label class="field">Quién puede confirmarlo<input id="vn-${id}" value="${safe(v.nombre)}" placeholder="Nombre y apellidos"></label>
           <label class="field">Rol o relación<input id="vr-${id}" value="${safe(v.rol)}" placeholder="Ej.: responsable de equipo"></label>
@@ -838,17 +1064,19 @@ document.addEventListener("click", (ev) => {
   const b = ev.target.closest('[data-act="open"]');
   if (b) openFile(b.dataset.path);
 });
-$("evidenceList").addEventListener("click", async (ev) => {
+const acOfList = (el) => (el.id === "acEvidenceList" ? acActual : null);
+async function onEvidenceClick(ev) {
   const b = ev.target.closest("button[data-act]"); if (!b || b.dataset.act === "open") return;
   const e = evidences.find((x) => x.id === b.dataset.id); if (!e) return;
+  const acId = acOfList(ev.currentTarget);
   const msg = () => $("msg-" + e.id), say = (t) => { const m = msg(); if (m) m.textContent = t; };
-  if (b.dataset.act === "quick") { openQuick(e.id); return; }
+  if (b.dataset.act === "quick") { openQuick(e.id, acId); return; }
   if (b.dataset.act === "quickcancel") { delete quickState[e.id]; render(); return; }
   if (b.dataset.act === "quicksave") { saveQuick(e); return; }
   if (b.dataset.act === "save") {
     const n = structuredClone(e);
     n.titulo = $("t-" + e.id).value.trim() || e.titulo; n.fecha = $("f-" + e.id).value || e.fecha; n.horas = num($("h-" + e.id).value); n.contexto = $("c-" + e.id).value;
-    n.resultados = [...document.querySelectorAll(`input[data-ev="${e.id}"]`)].filter((c) => c.checked).map((c) => c.dataset.ra);
+    if (acId) n.vinculos = { ...(n.vinculos || {}), [acId]: [...document.querySelectorAll(`input[data-ev="${e.id}"]`)].filter((c) => c.checked).map((c) => c.dataset.ra) };
     n.verificacion = { nombre: $("vn-" + e.id).value.trim(), rol: $("vr-" + e.id).value.trim(), contacto: $("vc-" + e.id).value.trim(), estado: $("vs-" + e.id).value };
     try { await saveEvidence(n); say("Guardado"); } catch (err) { say(err.message); }
   }
@@ -876,17 +1104,27 @@ $("evidenceList").addEventListener("click", async (ev) => {
   }
   if (b.dataset.act === "del") {
     if (b.dataset.armed) { try { await deleteEvidence(e); } catch (err) { say(err.message); } return; }
-    b.dataset.armed = "1"; b.textContent = "Pulsa otra vez para eliminar";
+    b.dataset.armed = "1"; b.textContent = acreditaciones.length > 1 ? "Pulsa otra vez: se elimina de todas tus acreditaciones" : "Pulsa otra vez para eliminar";
     setTimeout(() => { if (b.isConnected) { delete b.dataset.armed; b.textContent = "Eliminar"; } }, 4000);
   }
-});
-$("evidenceList").addEventListener("change", async (ev) => {
+}
+async function onEvidenceChange(ev) {
   const inp = ev.target.closest('input[data-act="upload"]'); if (!inp) return;
   const f = inp.files?.[0], e = evidences.find((x) => x.id === inp.dataset.id); if (!f || !e) return;
   const say = (t) => { const m = $("msg-" + e.id); if (m) m.textContent = t; };
   say("Subiendo…");
   try { await addArtefact(e.id, await uploadFile(f, e.id)); } catch (err) { say(err.message); }
-});
+}
+function onEvidenceInput(ev) {
+  const el = ev.target.closest("[data-quick]"); if (!el) return;
+  const q = quickState[el.dataset.quick]; if (!q) return;
+  if (el.dataset.i === "horas") q.horas = el.value; else q.respuestas[Number(el.dataset.i)] = el.value;
+}
+for (const list of [$("evidenceList"), $("acEvidenceList")]) {
+  list.addEventListener("click", onEvidenceClick);
+  list.addEventListener("change", onEvidenceChange);
+  list.addEventListener("input", onEvidenceInput);
+}
 /** Saves a proof on an evidence and asks Lumen to review it against the official learning outcomes. */
 async function addArtefact(evId, a) {
   const say = (t) => { const m = $("msg-" + evId); if (m) m.textContent = t; };
@@ -902,7 +1140,7 @@ async function addArtefact(evId, a) {
 async function reviewArtefactAI(e, a) {
   if (!aiOk) return null;
   try {
-    return await (await api("/api/artefacto", { path: a.path || "", url: a.url || "", nombre: a.name, evidencia: { titulo: e.titulo, resumen: Object.values(e.evidencias || {}).join(" ") } })).json();
+    return await (await api("/api/artefacto", { acreditacion_id: vista === "acreditacion" ? acActual : null, path: a.path || "", url: a.url || "", nombre: a.name, evidencia: { titulo: e.titulo, resumen: Object.values(e.evidencias || {}).join(" ") } })).json();
   } catch (err) {
     if (err.status === 415 || err.status === 413 || err.status === 422 || err.status === 504) return { error: err.message };
     aiProblem(err); return null;
@@ -910,29 +1148,42 @@ async function reviewArtefactAI(e, a) {
 }
 
 /* ================= Coordination ================= */
-let people = [], selected = null;
+let people = [], selected = null, peopleAcs = [];
 async function loadPeople() {
   const { data, error } = await sb.from("perfiles").select("user_id,nombre,objetivo,compartir_con_coordinacion").neq("user_id", session.user.id).eq("compartir_con_coordinacion", true).order("nombre");
   if (error) { $("people").innerHTML = '<div class="empty">No se pudo cargar la lista.</div>'; return; }
   people = data;
-  $("people").innerHTML = people.length ? people.map((p) => `<button class="person${selected?.user_id === p.user_id ? " on" : ""}" data-person="${safe(p.user_id)}"><span><b>${safe(p.nombre || "Sin nombre")}</b><br><small class="subtle">${safe(targetName(resolveObjetivo(p.objetivo)))}</small></span><span>→</span></button>`).join("") : '<div class="empty">Todavía nadie ha compartido su expediente.</div>';
+  const r = people.length ? await sb.from("acreditaciones").select("user_id,asignatura_id").in("user_id", people.map((p) => p.user_id)) : { data: [] };
+  peopleAcs = r.data || [];
+  const resumen = (p) => { const acs = peopleAcs.filter((a) => a.user_id === p.user_id); return acs.length ? acs.map((a) => subjectOf(a).asignatura).join(" · ") : targetName(resolveObjetivo(p.objetivo)); };
+  $("people").innerHTML = people.length ? people.map((p) => `<button class="person${selected?.user_id === p.user_id ? " on" : ""}" data-person="${safe(p.user_id)}"><span><b>${safe(p.nombre || "Sin nombre")}</b><br><small class="subtle">${safe(resumen(p))}</small></span><span>→</span></button>`).join("") : '<div class="empty">Todavía nadie ha compartido su expediente.</div>';
 }
 $("people").addEventListener("click", async (ev) => {
   const b = ev.target.closest("[data-person]"); if (!b) return;
   const p = people.find((x) => x.user_id === b.dataset.person); if (!p) return;
-  const { data, error } = await sb.from("evidencias").select("data,created_at").eq("user_id", p.user_id).order("created_at");
-  if (error) return;
-  selected = { ...p, obj: resolveObjetivo(p.objetivo), evs: data.map((r) => r.data) };
+  const [r1, r2] = await Promise.all([sb.from("evidencias").select("data,created_at").eq("user_id", p.user_id).order("created_at"), sb.from("acreditaciones").select("*").eq("user_id", p.user_id).order("created_at")]);
+  if (r1.error) return;
+  const evs = r1.data.map((r) => r.data);
+  let acs = r2.data || [];
+  // Participants who have not signed in since the tree arrived still have a single target in their profile.
+  if (!acs.length && p.objetivo?.asignatura_id) acs = [{ id: "legado", asignatura_id: p.objetivo.asignatura_id }];
+  selected = { ...p, evs, acs: acs.map((ac) => ({ ac, o: ac.id === "legado" ? resolveObjetivo(p.objetivo) : subjectOf(ac), evs: ac.id === "legado" ? evs : evsDe(ac.id, evs) })) };
   document.querySelectorAll(".person").forEach((x) => x.classList.toggle("on", x === b));
   $("coordDetail").hidden = false;
   $("coordName").textContent = p.nombre || "Sin nombre";
-  $("coordProgress").innerHTML = `<p class="note">Acreditación: ${safe(targetName(selected.obj))}</p>${progressHtml(selected.obj, selected.evs)}`;
-  $("coordKpis").innerHTML = kpisHtml(selected.obj, selected.evs);
-  $("coordMatrix").innerHTML = matrixHtml(selected.obj, selected.evs);
-  renderEvidenceList($("coordEvidences"), selected.evs, selected.obj, false);
+  $("coordAcs").innerHTML = selected.acs.length ? selected.acs.map(({ ac, o, evs: e2 }) => `<section class="coord-ac">
+      <h3>${safe(o.asignatura)}</h3><p class="note">${safe(o.titulacion)} · ${safe(o.universidad)} ${convenioPill(o.estado)}</p>
+      ${progressHtml(o, e2)}<div class="kpis">${kpisHtml(o, e2)}</div><div class="matrix">${matrixHtml(o, e2)}</div>
+      <div class="row-actions"><button class="btn primary small" data-coordexp="${safe(ac.id)}">↓ Descargar este expediente (HTML)</button></div></section>`).join("")
+    : '<div class="empty">Esta persona aún no tiene acreditaciones en su árbol.</div>';
+  renderEvidenceList($("coordEvidences"), evs, NO_OBJ, false, { acs: selected.acs.filter((x) => x.ac.id !== "legado").map((x) => x.ac) });
   $("coordDetail").scrollIntoView({ behavior: "smooth" });
 });
-$("coordExport").onclick = () => selected && download(`lumen-expediente-${normalize(selected.nombre || "participante").replace(/\W+/g, "-")}.html`, dossierHtml(selected.obj, selected.evs, selected.nombre), "text/html");
+$("coordAcs").addEventListener("click", (ev) => {
+  const b = ev.target.closest("[data-coordexp]"); if (!b || !selected) return;
+  const x = selected.acs.find((a) => a.ac.id === b.dataset.coordexp); if (!x) return;
+  download(`lumen-expediente-${normalize(selected.nombre || "participante").replace(/\W+/g, "-")}-${normalize(x.o.asignatura).replace(/\W+/g, "-")}.html`, dossierHtml(x.o, x.evs, selected.nombre), "text/html");
+});
 
 /* ================= Coordination: official catalog ================= */
 let solicitudes = [];
@@ -1077,8 +1328,8 @@ ${obj.resultados.map((r) => { const s = outcomeStatus(r, evs); return `<tr><td><
 <p class="note">La valoración de este documento es preliminar y autoinformada. Las puntuaciones de validez y suficiencia son estimaciones automáticas para orientar a la persona solicitante. Los archivos de prueba están disponibles en la plataforma Lumen. El reconocimiento de créditos corresponde exclusivamente a la universidad, conforme a su normativa.</p>
 </body></html>`;
 }
-$("exportHtml").onclick = () => download("lumen-expediente.html", dossierHtml(objetivo, evidences, perfil.nombre), "text/html");
-$("exportJson").onclick = () => download("lumen-mis-datos.json", JSON.stringify({ plataforma: "Lumen", exportado: new Date().toISOString(), aviso: "Declaraciones autoinformadas, pendientes de evaluación por la universidad", perfil: { nombre: perfil.nombre, consentimiento_at: perfil.consentimiento_at, compartir_con_coordinacion: perfil.compartir_con_coordinacion, objetivo }, evidencias: evidences }, null, 2), "application/json");
+$("exportHtml").onclick = () => acDe(acActual) && download(`lumen-expediente-${normalize(objetivo.asignatura).replace(/\W+/g, "-")}.html`, dossierHtml(objetivo, evsDe(acActual), perfil.nombre), "text/html");
+$("exportJson").onclick = () => download("lumen-mis-datos.json", JSON.stringify({ plataforma: "Lumen", exportado: new Date().toISOString(), aviso: "Declaraciones autoinformadas, pendientes de evaluación por la universidad", perfil: { nombre: perfil.nombre, consentimiento_at: perfil.consentimiento_at, compartir_con_coordinacion: perfil.compartir_con_coordinacion, trayectoria: perfil.trayectoria }, acreditaciones: acreditaciones.map((ac) => ({ asignatura: subjectOf(ac), estado: ac.estado, creada: ac.created_at, conversacion: ac.conversacion, recursos: ac.recursos })), evidencias: evidences }, null, 2), "application/json");
 
 /* ================= Auth screens ================= */
 $("loginForm").addEventListener("submit", async (ev) => {
@@ -1109,30 +1360,30 @@ $("consentForm").addEventListener("submit", async (ev) => {
 const ICONO_RECURSO = { Libro: "📖", "Vídeo": "🎬", "Artículo": "📰", "Pódcast": "🎧", Curso: "🎓" };
 let recommending = false;
 /** Outcomes that still need evidence, weakest first. */
-const pendingOutcomes = () => objetivo.resultados.map((r) => ({ r, n: outcomeStatus(r, evidences).n })).filter((x) => x.n < 5).sort((a, b) => a.n - b.n).map((x) => x.r.id).slice(0, 6);
+const pendingOutcomes = () => { const evs = evsDe(acActual); return objetivo.resultados.map((r) => ({ r, n: outcomeStatus(r, evs).n })).filter((x) => x.n < 5).sort((a, b) => a.n - b.n).map((x) => x.r.id).slice(0, 6); };
 async function requestResources() {
-  if (recommending || objetivo.sinObjetivo || !aiOk) return;
+  const ac = acDe(acActual);
+  if (recommending || !ac || !aiOk) { if (!aiOk) $("recMsg").textContent = "La IA no está disponible ahora mismo."; return; }
   const pend = pendingOutcomes();
   if (!pend.length) { $("recMsg").textContent = "Ya tienes todos los resultados de aprendizaje listos."; return; }
   recommending = true;
   const btn = $("recBtn"); btn.disabled = true; btn.textContent = "Buscando recursos…";
   $("recMsg").textContent = "Lumen está buscando libros, vídeos, artículos y pódcast reales. Tarda uno o dos minutos.";
   try {
-    const r = await (await api("/api/recursos", { resultados: pend })).json();
-    perfil.recursos = r.recursos;
+    const r = await (await api("/api/recursos", { acreditacion_id: ac.id, resultados: pend })).json();
+    ac.recursos = r.recursos;
     $("recMsg").textContent = r.nuevos ? `${r.nuevos} recursos nuevos.` : "No he encontrado recursos nuevos. Vuelve a intentarlo más tarde.";
-    renderResources();
   } catch (e) { aiProblem(e); $("recMsg").textContent = e.message; }
-  finally { recommending = false; btn.disabled = false; btn.textContent = "Recomiéndame recursos"; }
+  finally { recommending = false; btn.disabled = false; btn.textContent = "Recomiéndame recursos"; if (acActual === ac.id) renderResources(); }
 }
 function renderResources() {
-  $("recSection").hidden = objetivo.sinObjetivo;
-  if (objetivo.sinObjetivo) return;
-  const rec = perfil.recursos?.asignatura_id === objetivo.asignatura_id ? perfil.recursos.items || [] : [];
-  const vivos = rec.filter((x) => x.estado !== "descartado");
-  if (!vivos.length) { $("recList").innerHTML = recommending ? "" : '<div class="empty">Pulsa «Recomiéndame recursos» y Lumen buscará material para lo que te falta.</div>'; return; }
+  const ac = acDe(acActual);
+  $("recSection").hidden = !ac || !objetivo.resultados.length;
+  if ($("recSection").hidden) return;
+  const vivos = (ac.recursos?.items || []).filter((x) => x.estado !== "descartado"), evs = evsDe(ac.id);
+  if (!vivos.length) { $("recList").innerHTML = recommending ? "" : '<div class="empty">Pulsa «Recomiéndame recursos» y Lumen buscará material para lo que te falta en esta acreditación.</div>'; return; }
   $("recList").innerHTML = objetivo.resultados.filter((r) => vivos.some((x) => x.resultado_id === r.id)).map((r) => {
-    const s = outcomeStatus(r, evidences);
+    const s = outcomeStatus(r, evs);
     return `<div class="rec-group"><h3><b>${safe(r.id)}</b> ${safe(r.texto)} <span class="pill ${s.cls}">${s.n}/5</span></h3>
       ${vivos.filter((x) => x.resultado_id === r.id).map((x) => {
         let host = ""; try { host = new URL(x.url).hostname.replace(/^www\./, ""); } catch {}
@@ -1147,11 +1398,11 @@ function renderResources() {
 $("recBtn").onclick = requestResources;
 $("recList").addEventListener("click", async (ev) => {
   const b = ev.target.closest("[data-rec]"); if (!b) return;
-  const rec = perfil.recursos, x = rec?.items?.find((i) => i.id === b.dataset.id); if (!x) return;
+  const ac = acDe(acActual), rec = ac?.recursos, x = rec?.items?.find((i) => i.id === b.dataset.id); if (!x) return;
   const items = rec.items.map((i) => (i.id === x.id ? { ...i, estado: b.dataset.rec === "usar" ? "usado" : "descartado" } : i));
-  updatePerfil({ recursos: { ...rec, items } }).then(renderResources).catch(() => {});
+  updateAc(ac, { recursos: { ...rec, items } }).then(renderResources).catch(() => {});
   if (b.dataset.rec === "usar") {
-    show("agente"); if (busy) return;
+    setTab("chat"); if (busy) return;
     document.querySelectorAll(".choices").forEach((c) => c.remove());
     newDraft(); draft.titulo = x.titulo;
     bubble(`He ${x.tipo === "Libro" ? "leído" : x.tipo === "Pódcast" ? "escuchado" : "visto"} «${x.titulo}» y quiero documentar lo que aprendí. ${x.url}`, "user");
@@ -1240,6 +1491,7 @@ async function runImport({ nombre, pistas = "", enlaces = [], cvFile = null, web
       cargadas++;
     }
     await updatePerfil({ trayectoria: t });
+    if (cargadas) await relinkTodo(logStep);
     const porRevisar = t.items.filter((i) => i.estado === "pendiente").length;
     logStep(cargadas || porRevisar ? `Listo: ${cargadas} experiencias cargadas en tus evidencias${porRevisar ? ` y ${porRevisar} por revisar` : ""}` : "No he encontrado experiencias nuevas");
     $("trayLog").classList.add("done");
@@ -1252,6 +1504,13 @@ async function runImport({ nombre, pistas = "", enlaces = [], cvFile = null, web
     aiProblem(e); $("tMsg").textContent = e.message; logStep("No se pudo completar la carga");
     return null;
   } finally { importing = false; btn.disabled = false; btn.textContent = "Cargar mi experiencia"; }
+}
+/** After many new evidences at once, one pass per accreditation is cheaper than one per evidence. */
+async function relinkTodo(onStep = () => {}) {
+  for (const ac of acreditaciones) {
+    onStep(`Vinculando con «${subjectOf(ac).asignatura}»`);
+    try { await relinkAc(ac.id); } catch (e) { aiProblem(e); }
+  }
 }
 async function autoTraceOnSignup(p) {
   show("trayectoria");
@@ -1314,10 +1573,10 @@ function renderTrayectoria() {
   }
   $("trayLine").innerHTML = html;
 }
-async function decideTray(x, accion) {
+async function decideTray(x, accion, lote = false) {
   const t = tray();
   let evId = null;
-  if (accion === "si") { const e = evidenceFromTray(x); evId = e.id; await saveEvidence(e); }
+  if (accion === "si") { const e = evidenceFromTray(x); evId = e.id; await saveEvidence(e); if (!lote) vincularEnArbol(e); }
   if (accion === "quitar" && x.evidencia_id) { const e = evidences.find((i) => i.id === x.evidencia_id); if (e) await deleteEvidence(e); }
   const items = tray().items.map((i) => (i.id === x.id ? { ...i, estado: accion === "si" ? "confirmada" : "descartada", evidencia_id: evId, auto: false } : i));
   await updatePerfil({ trayectoria: { ...t, items } });
@@ -1345,7 +1604,7 @@ $("trayList").addEventListener("click", onTrayClick);
 $("trayLine").addEventListener("click", onTrayClick);
 $("trayAll").onclick = async () => {
   const btn = $("trayAll"); btn.disabled = true; btn.textContent = "Creando evidencias…";
-  try { for (const x of pendientes()) await decideTray(x, "si"); render(); maybeAutoPropose(); }
+  try { for (const x of pendientes()) await decideTray(x, "si", true); render(); await relinkTodo(); maybeAutoPropose(); }
   finally { btn.disabled = false; btn.textContent = "Todo esto es mío"; }
 };
 
@@ -1356,14 +1615,14 @@ const PREGUNTAS_BASE = (e) => [
   "Describe una decisión o un problema real de esa experiencia: qué hiciste, con qué criterio y qué resultado obtuviste (con alguna cifra si puedes).",
   "¿Qué límites tiene lo que sabes de esto, y quién podría confirmar tu trabajo (nombre y rol)?",
 ];
-async function openQuick(evId) {
+async function openQuick(evId, acId = null) {
   const e = evidences.find((x) => x.id === evId); if (!e) return;
   if (!quickState[evId]) {
-    quickState[evId] = { cargando: true, preguntas: [], respuestas: ["", "", ""], horas: e.horas || "" };
+    quickState[evId] = { cargando: true, preguntas: [], respuestas: ["", "", ""], horas: e.horas || "", ac: acId };
     render();
     let preguntas = PREGUNTAS_BASE(e);
     if (aiOk) {
-      try { const r = await (await api("/api/analyze", { kind: "preguntas", titulo: e.titulo, resumen: Object.values(e.evidencias || {}).join(" ") })).json(); if (r.preguntas?.length === 3) preguntas = r.preguntas; }
+      try { const r = await (await api("/api/analyze", { kind: "preguntas", acreditacion_id: acId, titulo: e.titulo, resumen: Object.values(e.evidencias || {}).join(" ") })).json(); if (r.preguntas?.length === 3) preguntas = r.preguntas; }
       catch (err) { aiProblem(err); }
     }
     Object.assign(quickState[evId], { cargando: false, preguntas });
@@ -1392,12 +1651,12 @@ async function saveQuick(e) {
   const n = structuredClone(e), texto = q.respuestas.join(" ");
   try {
     let o = null;
-    if (aiOk) { try { o = await (await api("/api/analyze", { kind: "interview", titulo: e.titulo, history })).json(); } catch (err) { aiProblem(err); } }
+    if (aiOk) { try { o = await (await api("/api/analyze", { kind: "interview", acreditacion_id: q.ac, titulo: e.titulo, history })).json(); } catch (err) { aiProblem(err); } }
     if (o) {
       for (const k of ["idea", "aplicacion", "argumentacion", "conexion", "limites"]) if (o.evidencias?.[k]?.trim()) n.evidencias[k] = o.evidencias[k].trim();
       n.criterios = { validez: clamp03(o.validez), suficiencia: clamp03(o.suficiencia) };
       n.falta = o.falta || "";
-      if (o.resultados?.length) n.resultados = o.resultados;
+      if (q.ac && o.resultados?.length) n.vinculos = { ...(n.vinculos || {}), [q.ac]: [...new Set([...(n.vinculos?.[q.ac] || []), ...o.resultados])] };
       if (CONTEXTOS.includes(o.contexto) && !n.contexto) n.contexto = o.contexto;
       if (o.verificador_nombre && !n.verificacion?.nombre) n.verificacion = { ...n.verificacion, nombre: o.verificador_nombre, rol: o.verificador_rol || "" };
       n.horas = num(q.horas) || num(o.horas) || n.horas;
@@ -1405,18 +1664,14 @@ async function saveQuick(e) {
       [["idea", 0], ["aplicacion", 1], ["limites", 2]].forEach(([k, i]) => { if (q.respuestas[i].trim()) n.evidencias[k] = q.respuestas[i].trim(); });
       n.criterios = { validez: Math.max(1, clamp03(n.criterios?.validez)), suficiencia: texto.length > 500 ? 2 : 1 };
       n.horas = num(q.horas) || n.horas;
-      if (!n.resultados?.length) n.resultados = ruleLink(texto + " " + e.titulo);
+      if (q.ac && !n.vinculos?.[q.ac]?.length) n.vinculos = { ...(n.vinculos || {}), [q.ac]: ruleLink(texto + " " + e.titulo) };
     }
     n.dialogue = [...(n.dialogue || []), ...history.slice(1).map((m) => ({ role: m.role, text: m.content }))];
     delete quickState[e.id];
     await saveEvidence(n);
+    vincularEnArbol(n, q.ac ? [q.ac] : []);
   } catch (err) { q.guardando = false; q.msg = err.message; render(); }
 }
-$("evidenceList").addEventListener("input", (ev) => {
-  const el = ev.target.closest("[data-quick]"); if (!el) return;
-  const q = quickState[el.dataset.quick]; if (!q) return;
-  if (el.dataset.i === "horas") q.horas = el.value; else q.respuestas[Number(el.dataset.i)] = el.value;
-});
 
 /* ================= Google Drive ================= */
 // Uses the Google Picker with the drive.file scope: Lumen only ever sees the files the person picks.
